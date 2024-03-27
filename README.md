@@ -23,7 +23,7 @@
 <h3 align="left">and you can connect with me here Connect with me here :</h3>
 <p align="left">
 
-<a href="a_touati@estin.dz" target="blank"><img align="center" src="https://www.logo.wine/a/logo/Gmail/Gmail-Logo.wine.svg" alt="ayoub touati" height="40" width="40" /></a>
+<a href="https://mail.google.com/mail/u/0/#search/a_touati%40estin.dz?compose=GTvVlcSDbgsbbjXCNPbjCrmqKzLLcrhNnkQqPFHnZvjzqZvRVdbfpsCxZKLFTHLfXHbZsvskSDtlZ" target="blank"><img align="center" src="https://www.logo.wine/a/logo/Gmail/Gmail-Logo.wine.svg" alt="ayoub touati" height="40" width="40" /></a>
 <a href="https://www.linkedin.com/in/ayoub-touati-916578267/" target="blank"><img align="center" src="https://raw.githubusercontent.com/rahuldkjain/github-profile-readme-generator/master/src/images/icons/Social/linked-in-alt.svg" alt="ayoub touati" height="30" width="40" /></a>
 <a href="https://www.facebook.com/ayoub.touati.184" target="blank"><img align="center" src="https://raw.githubusercontent.com/rahuldkjain/github-profile-readme-generator/master/src/images/icons/Social/facebook.svg" alt="touati ayoub" height="30" width="40" /></a>
 </p>
