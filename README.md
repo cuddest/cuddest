@@ -1,10 +1,10 @@
 <h1 align="center">Hi 👋, I'm Touati Ayoub or you can call me cuddest :)</h1>
 <h3 align="center">im a Backend web-dev using python's django and cyber security enthusiast</h3>
-<img align="center" alt="Coding" width="400" src="https://pbs.twimg.com/media/FwtB8b_X0AASZdD?format=jpg&name=medium">
+<img align="right" alt="Coding" width="400" src="https://pbs.twimg.com/media/FwtB8b_X0AASZdD?format=jpg&name=medium">
 
-
+<h3 align="left">Profile views:</h3>
 <div align="center">
-  <img src="https://profile-counter.glitch.me/AghilesTMA/count.svg?"  />
+  <img src="https://profile-counter.glitch.me/cuddest/count.svg?"  />
 </div>
 
 
