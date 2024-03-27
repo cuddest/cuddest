@@ -2,7 +2,7 @@
 <h3 align="center">im a Backend web-dev using python's django and cyber security enthusiast</h3>
 <img align="right" alt="Coding" width="400" src="https://pbs.twimg.com/media/FwtB8b_X0AASZdD?format=jpg&name=medium">
 
-<p align="left"> <img src="https://komarev.com/ghpvc/?username=cuddest&label=Profile%20views&color=0e75b6&style=flat" alt="cuddest" /> </p>
+
 
 <p align="left"> <a href="https://github.com/ryo-ma/github-profile-trophy"><img src="https://github-profile-trophy.vercel.app/?username=cuddest" alt="cuddest" /></a> </p>
 
