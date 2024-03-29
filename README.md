@@ -16,11 +16,11 @@
 
 - 🌱 I’m currently diving **into the world of cyber and CTFs, and improving my Django skills**
 
-- 💬 You can Ask me about **Python's Django**
+- 💬 You can Ask me about **Python's Django and DRF**
 
-- ⚡ Fun fact **Do you know that Earth wouldn't be capable of holding a breeding pair from every species that ever existed**
+- ⚡ Fun fact: **Do you know that Earth wouldn't be capable of holding a breeding pair from every species that ever existed**
 </div>
-<h3 align="left">and you can connect with me here Connect with me here :</h3>
+<h3 align="left">and you can connect with me here :</h3>
 <p align="left">
 
 <a href="https://mail.google.com/mail/u/0/#search/a_touati%40estin.dz?compose=GTvVlcSDbgsbbjXCNPbjCrmqKzLLcrhNnkQqPFHnZvjzqZvRVdbfpsCxZKLFTHLfXHbZsvskSDtlZ" target="blank"><img align="center" src="https://www.logo.wine/a/logo/Gmail/Gmail-Logo.wine.svg" alt="ayoub touati" height="40" width="40" /></a>
