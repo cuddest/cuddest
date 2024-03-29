@@ -18,7 +18,7 @@
 
 - 💬 You can Ask me about **Python's Django and DRF**
 
-- ⚡ Fun fact: **Do you know that Earth wouldn't be capable of holding a breeding pair from every species that ever existed**
+- ⚡ Fun fact: **Do you know that Earth wouldn't be capable of carrying a breeding pair from every species that ever existed**
 </div>
 <h3 align="left">and you can connect with me here :</h3>
 <p align="left">
