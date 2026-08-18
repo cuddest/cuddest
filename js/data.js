@@ -10,18 +10,18 @@ const PROFILE = {
   role: "Cybersecurity Engineer",
 
   // The large headline in the About section.
-  statement: "Defending systems I know how to break.",
+  statement: "In a journey of getting better at defending systems",
 
   tagline:
-    "Cybersecurity student moving into defence — detection engineering, incident response, and threat hunting. I play offensive CTFs to understand the other side of the alert.",
+    "Cybersecurity student focused into defence detection engineering, incident response, and threat hunting. I play offensive CTFs, one could enjoy the other side of the alert too.",
 
   // The spec sheet beside the About text. Add or remove rows freely.
   facts: [
-    ["Based", "Tunis, Tunisia"],
-    ["Year", "3rd — B.Sc. CS"],
+    ["Based", "Algiers, Algeria"],
+    ["Year", "Final — Higher School Of Computer Science, Bejaia."],
     ["Focus", "Detection & IR"],
-    ["Offence", "CTFs only"],
-    ["Status", "Seeking SOC internship"],
+    ["CTFs", "Web, Forensics"],
+    ["Status", "Seeking a blue teaming focused PFE"],
   ],
 
   // ---- LANDING BACKGROUND ----
@@ -37,20 +37,20 @@ const PROFILE = {
   portrait: {
     src: "",
     alt: "Portrait of Ayoub Touati",
-    caption: "Tunis, 2026",
+    caption: "Algiers, 2026",
   },
 
-  location: "Tunisia",
-  email: "ayoubtouati584@gmail.com",
+  location: "Algeria",
+  email: "a_touati@estin.dz",
 
   links: {
     github: "https://github.com/cuddest",
-    linkedin: "",
-    cyberdefenders: "",
-    tryhackme: "",
-    ctftime: "",
-    discord: "",
-    instagram: "",
+    linkedin: "https://www.linkedin.com/in/ayoub-touati-916578267/",
+    cyberdefenders: "https://cyberdefenders.org/p/cuddest/",
+    tryhackme: "https://tryhackme.com/p/cuddest",
+    ctftime: "https://ctftime.org/user/219769",
+    discord: "https://discord.com/users/[659743566654078986]",
+    instagram: "cudddest",
   },
 
   // Wrap anything in [[double brackets]] to render it as a redaction bar
@@ -67,7 +67,7 @@ const PROFILE = {
    Always uses the first entry. Move another to the top to swap.
 ------------------------------------------------------------ */
 const QUOTES = [
-  { text: "Do you clap when nothing happens?" },
+  { text: "Do we clap when nothing happens?" },
 ];
 
 /* ------------------------------------------------------------
@@ -88,11 +88,11 @@ const SKILLS = [
   },
   {
     title: "Backend Engineering",
-    items: ["Python", "Node.js", "PostgreSQL", "Docker", "REST APIs", "Git"],
+    items: ["Go", "DRF", "PostgreSQL", "Docker", "REST APIs", "Git"],
   },
   {
-    title: "Offensive — CTF",
-    items: ["Web exploitation", "Pwn", "Reverse engineering", "Cryptography", "Privilege escalation"],
+    title: "CTFs",
+    items: ["Web exploitation", "Dfir", "OSINT],
   },
 ];
 
