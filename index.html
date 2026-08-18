@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ayoub Touati — Cybersecurity &amp; Backend</title>
+<meta name="description" content="Cybersecurity student and backend developer. Security research, CTF writeups, and engineering projects.">
+<meta name="theme-color" content="#090d13">
+
+<meta property="og:title" content="Ayoub Touati — Cybersecurity &amp; Backend">
+<meta property="og:description" content="Security research, CTF writeups, and engineering projects.">
+<meta property="og:type" content="website">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <ul class="topsocials side left" id="topSocialsLeft"></ul>
+
+    <a class="logo" href="#top" aria-label="cuddest — home">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+
+    <ul class="topsocials side right" id="topSocialsRight"></ul>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ================= LANDING ================= -->
+<section class="hero" id="top">
+  <div class="hero-media" id="heroMedia" aria-hidden="true"></div>
+  <div class="gridbg" aria-hidden="true"></div>
+  <div class="wrap hero-in">
+    <div class="hero-panel" id="about">
+      <h1 class="hero-quote" id="quoteText"></h1>
+
+      <hr class="panel-rule">
+
+      <p class="statement" id="statement"></p>
+      <p class="tagline" id="tagline"></p>
+      <div class="prose" id="aboutText"></div>
+
+      <p class="hero-cta">
+        <a class="btn-line" href="#writing">Read the writeups</a>
+        <a class="ulink" href="#contact">Get in touch</a>
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= WRITING ================= -->
+<section class="section" id="writing">
+  <div class="wrap sec-grid">
+    <div class="sec-label"><span class="num">02</span><span>Writing</span></div>
+    <div class="sec-body">
+      <div class="filters" id="writeupFilters" role="tablist" aria-label="Filter writing"></div>
+      <ul class="index" id="writeupsList"></ul>
+    </div>
+  </div>
+</section>
+
+<div class="wrap"><hr class="rule"></div>
+
+<!-- ================= WORK ================= -->
+<section class="section" id="work">
+  <div class="wrap sec-grid">
+    <div class="sec-label"><span class="num">03</span><span>Selected work</span></div>
+    <div class="sec-body">
+      <div class="filters" id="projectFilters" role="tablist" aria-label="Filter work"></div>
+      <ol class="entries" id="projectsList"></ol>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CTF ================= -->
+<section class="section" id="ctf">
+  <div class="wrap sec-grid">
+    <div class="sec-label"><span class="num">04</span><span>CTF results</span></div>
+    <div class="sec-body">
+      <ul class="results" id="ctfList"></ul>
+    </div>
+  </div>
+</section>
+
+<!-- ================= TOOLKIT ================= -->
+<section class="section" id="toolkit">
+  <div class="wrap sec-grid">
+    <div class="sec-label"><span class="num">05</span><span>Toolkit</span></div>
+    <div class="sec-body">
+      <div class="toolkit" id="skillsList"></div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap"><hr class="rule"></div>
+
+<!-- ================= CREDENTIALS ================= -->
+<section class="section" id="credentials" hidden>
+  <div class="wrap sec-grid">
+    <div class="sec-label"><span class="num">06</span><span>Education</span></div>
+    <div class="sec-body">
+      <ul class="results" id="credsList"></ul>
+    </div>
+  </div>
+</section>
+
+<div class="wrap"><hr class="rule heavy"></div>
+
+<!-- ================= CONTACT ================= -->
+<section class="closing" id="contact">
+  <div class="wrap closing-in">
+    <p class="kicker">Contact</p>
+    <p class="closing-line">Open to internships, collaborations,<br>and CTF teams.</p>
+    <a class="mailto" id="contactMail" href="#"></a>
+    <ul class="elsewhere" id="socials"></ul>
+  </div>
+</section>
+
+</main>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span id="footerLeft"></span>
+    <span>Set in Geist &amp; JetBrains Mono — press <kbd>/</kbd> to search</span>
+    <span><a class="ulink" href="#top">Back to top</a></span>
+  </div>
+</footer>
+
+<!-- ================= QUICK SEARCH ================= -->
+<div class="palette" id="palette" hidden>
+  <div class="palette-panel" role="dialog" aria-modal="true" aria-label="Quick search">
+    <div class="palette-top">
+      <span class="palette-prompt">&gt;</span>
+      <input id="paletteInput" type="text" placeholder="Jump to a section, project, or writeup…"
+             autocomplete="off" spellcheck="false" aria-label="Search">
+      <kbd>esc</kbd>
+    </div>
+    <ul class="palette-results" id="paletteResults"></ul>
+  </div>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
