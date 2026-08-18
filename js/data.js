@@ -12,9 +12,7 @@ const PROFILE = {
   // The large headline in the About section.
   statement: "In a journey of getting better at defending systems",
 
-  tagline:
-    "Cybersecurity student focused into defence detection engineering, incident response, and threat hunting. I play offensive CTFs, one could enjoy the other side of the alert too.",
-
+  
   // The spec sheet beside the About text. Add or remove rows freely.
   facts: [
     ["Based", "Algiers, Algeria"],
@@ -56,9 +54,9 @@ const PROFILE = {
   // Wrap anything in [[double brackets]] to render it as a redaction bar
   // that reveals on hover or tap. Once on the page is a joke; five is a gimmick.
   about: [
-    "I'm a cybersecurity student heading for the blue team — detection engineering, incident response, and threat hunting. The work I care about is the part that happens after something has already gone wrong.",
-    "I still play offensive CTFs, and that's deliberate. You can't write a detection for an attack you've never run. Learning to break things is how I learned what the logs were trying to tell me. My first real bug was [[a forgotten .git directory]], and I've been hooked since.",
-    "I also build backends, which keeps me honest about where the logs come from in the first place — most blind spots are design decisions somebody forgot they made.",
+    "Touati Ayoub or Cuddest, I'm a cybersecurity student heading for the blue team, detection engineering, incident response, and threat hunting. The work I care about is the part that happens after something has already gone wrong.",
+    "I also play CTFs where i enjoy web exploitation, DFIR and Osint, it is fun to look from the other point of view of the scene, it's the way i dived first in this world and I've been hooked since.",
+    "I also build backends, which keeps me honest and humble about where the logs come from in the first place, most blind spots are design decisions somebody forgot they made.",
   ],
 };
 
