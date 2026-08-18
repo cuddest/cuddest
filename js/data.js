@@ -92,7 +92,7 @@ const SKILLS = [
   },
   {
     title: "CTFs",
-    items: ["Web exploitation", "Dfir", "OSINT],
+    items: ["Web exploitation", "Dfir", "OSINT"],
   },
 ];
 
