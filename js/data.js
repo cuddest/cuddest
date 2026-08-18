@@ -141,58 +141,85 @@ const PROJECTS = [
 
 /* ------------------------------------------------------------
    WRITEUPS
-   category -> "Detection", "DFIR", "Hunting", "Web", "Pwn", "Crypto", "Rev", "Notes"
+   category -> one of WRITEUP_CATEGORIES. Drives the filter bar.
+   tags -> platform + topic. Keep consistent, a typo makes a new button.
    severity -> "Critical" | "High" | "Medium" | "Low" | "Info"
                Only Critical gets the brass mark. Omit to hide.
 ------------------------------------------------------------ */
+const WRITEUP_CATEGORIES = ["Lab writeups", "CTFs", "Articles", "Off-topic"];
+
 const WRITEUPS = [
   {
-    title: "Example — Detecting Impossible-Travel Logins Without a SIEM",
-    tags: ["siem","geoip","auth-logs","false-positives"],
-    event: "Home lab",
-    category: "Detection",
+    title: "Conti — Investigating a Compromised Exchange Server",
+    tags: ["TryHackMe", "Splunk", "SIEM", "Ransomware", "Sysmon", "Exchange"],
+    event: "TryHackMe",
+    category: "Lab writeups",
+    severity: "Critical",
+    date: "2026-03-11",
+    readTime: "15 min",
+    summary:
+      "Reconstructing a Conti ransomware intrusion on an Exchange server from Sysmon and Windows event logs in Splunk — webshell, lsass injection, and user creation.",
+    url: "writeups/conti.html",
+  },
+  {
+    title: "ClickFix / VodkaStealer — Endpoint Hunt & Service Hijacking",
+    tags: ["CyberDefenders", "Splunk", "DFIR", "Incident Response", "Infostealer", "ClickFix"],
+    event: "CyberDefenders",
+    category: "Lab writeups",
+    severity: "Critical",
+    date: "2026-08-13",
+    readTime: "25 min",
+    summary:
+      "ClickFix CAPTCHA → PowerShell payload → unquoted service path privesc → LSASS dump → pass-the-hash → scheduled-task persistence and exfiltration.",
+    url: "writeups/vodkastealer.html",
+  },
+  {
+    title: "FakeGPT — A Malicious ChatGPT Browser Extension",
+    tags: ["CyberDefenders", "Malware Analysis", "Browser Extension", "JavaScript", "Exfiltration"],
+    event: "CyberDefenders",
+    category: "Lab writeups",
     severity: "High",
-    date: "2026-07-14",
-    readTime: "9 min",
+    date: "2026-03-28",
+    readTime: "10 min",
     summary:
-      "Geolocating auth events and flagging physically impossible session pairs, plus why the naive version drowns you in false positives from VPN users.",
-    url: "#",
+      "A fake ChatGPT extension that Base64-obfuscates targets, keylogs, and AES-encrypts stolen credentials before exfiltrating them through an image element.",
+    url: "writeups/fakegpt.html",
   },
   {
-    title: "Example — Reading a Compromise from Windows Event Logs Alone",
-    tags: ["dfir","event-logs","sysmon","timeline","anti-forensics"],
-    event: "DFIR exercise",
-    category: "DFIR",
-    severity: "Critical",
-    date: "2026-05-02",
-    readTime: "14 min",
-    summary:
-      "Rebuilding an intrusion timeline from 4624s, 4688s, and Sysmon process trees — what was recoverable, and what the attacker successfully cleared.",
-    url: "#",
-  },
-  {
-    title: "Example — Writing Sigma Rules for the Attacks I Used to Run",
-    tags: ["sigma","mitre-attack","privesc","detection-gaps"],
-    event: "Notes",
-    category: "Hunting",
-    severity: "Medium",
-    date: "2026-02-11",
-    readTime: "7 min",
-    summary:
-      "Turning three CTF privilege-escalation techniques into detections, and discovering that two of them are nearly invisible without command-line logging enabled.",
-    url: "#",
-  },
-  {
-    title: "Example — SQL Injection to RCE via File Write",
-    tags: ["sqli","rce","mysql","picoctf","web"],
-    event: "PicoCTF 2025",
-    category: "Web",
-    severity: "Critical",
-    date: "2025-11-02",
+    title: "OpenWire — Apache ActiveMQ RCE (CVE-2023-46604)",
+    tags: ["CyberDefenders", "PCAP", "Wireshark", "ActiveMQ", "CVE-2023-46604", "RCE"],
+    event: "CyberDefenders",
+    category: "Lab writeups",
+    severity: "High",
+    date: "2026-03-26",
     readTime: "8 min",
     summary:
-      "A blind boolean injection that turned into remote code execution once the database user had FILE privileges — and the log lines that would have caught it.",
-    url: "#",
+      "Tier-2 SOC analysis of an OpenWire handshake smuggling a ClassPathXmlApplicationContext → ProcessBuilder RCE on Apache ActiveMQ, CVE-2023-46604.",
+    url: "writeups/openwire.html",
+  },
+  {
+    title: "XLMRat — PCAP Hunt & Malware Analysis",
+    tags: ["CyberDefenders", "PCAP", "Malware Analysis", "AsyncRAT", "LOLBin"],
+    event: "CyberDefenders",
+    category: "Lab writeups",
+    severity: "High",
+    date: "2026-03-28",
+    readTime: "8 min",
+    summary:
+      "PCAP hunt: fileless VBScript dropper, a hex-encoded PE hiding inside an image, and RegSvcs LOLBin execution leading to AsyncRAT.",
+    url: "writeups/xlmrat.html",
+  },
+  {
+    title: "GhostConnect (TA583) — Full Threat Hunt in Splunk",
+    tags: ["CyberDefenders", "Splunk", "Threat Hunting", "Phishing", "DFIR", "TA583"],
+    event: "CyberDefenders",
+    category: "Lab writeups",
+    severity: "Critical",
+    date: "2026-08-18",
+    readTime: "25 min",
+    summary:
+      "Full hunt on FB-WKS64: phishing VBS → Google Drive staging → SilentConnect implant → AD enumeration → base64 HTTPS exfiltration.",
+    url: "writeups/ghostconnect.html",
   },
 ];
 

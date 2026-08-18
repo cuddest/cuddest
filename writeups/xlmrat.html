@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XLMRat — PCAP Hunt & Malware Analysis — cuddest</title>
+<meta name="description" content="XLMRat — PCAP Hunt & Malware Analysis">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/writeups.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="logo" href="../index.html#writing" aria-label="cuddest — back to writeups">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+    <span class="topbar-cta"><a class="ulink" href="../index.html#writing">← All writeups</a></span>
+  </div>
+</header>
+
+<article class="wpost">
+  <header class="wpost-head">
+    <p class="wpost-meta"><span>2026-03-28</span><span>8 min read</span></p>
+    <h1>XLMRat — PCAP Hunt & Malware Analysis</h1>
+  </header>
+  <div class="wpost-body">
+<h1>Scenario:</h1>
+<p>this lab provides is a simulation of a compromised machine that been flagged due suspicious network traffic, we have a <strong>PCAP</strong> file to analyze and answer the questions.</p>
+<h1>Questions:</h1>
+<ol>
+<li><strong><em>The attacker successfully executed a command to download the first stage of the malware. What is the URL from which the first malware stage was installed?</em></strong></li>
+</ol>
+<p>The first that comes to mind here is to filter by <strong>HTTP</strong>:</p>
+<p><img alt="img" src="images/Pasted image 20260328161214.png" /></p>
+<p>The filter got us down to 4 packets, checking the first one, we can see that the compromised machine done a GET request to the attacker server to download a txt file named <strong>xlm.txt</strong>.</p>
+<p>extracting this file from Wireshark ( <strong>File -&gt; Export Objects -&gt; HTTP</strong> ), we get the  obfuscated VBScript dropper the attacker used for fileless malware execution. It systematically concatenates an array of string fragments to dynamically reconstruct a malicious PowerShell command, evading basic static analysis. Upon assembly, it spawns a hidden, non-interactive shell process (<code>cmd.exe</code>) that launches PowerShell with restriction bypassing flags (<code>-ExecutionPolicy Bypass</code>, <code>-WindowStyle Hidden</code>). The deobfuscated payload utilizes <code>Net.WebClient.DownloadString</code> to fetch a remote script—disguised as an image file (<code>mdm.jpg</code>) from <code>45.126.209.4:222</code>—and immediately executes it in memory using <code>Invoke-Expression</code> (<code>IEX</code>), bypassing disk-based detection mechanisms entirely. </p>
+<div class="answer">http://45.126.209.4:222/mdm.jpg</div>
+
+<ol start="2">
+<li><strong><em>Which hosting provider owns the associated IP address?</em></strong></li>
+</ol>
+<p>VirusTotal TIme !!</p>
+<p>The first page that popped up after searching the ip address provided the answer.</p>
+<p><img alt="img" src="images/Pasted image 20260328161928.png" /></p>
+<div class="answer">reliableSite.net</div>
+
+<ol start="3">
+<li><strong><em>By analyzing the malicious scripts, two payloads were identified: a loader and a secondary executable. What is the SHA256 of the malware executable?</em></strong></li>
+</ol>
+<p>extracting the downloaded image, i first ran a fast ckeck on the file to see what it is actually hiding:</p>
+<p><code>┌──(cuddest㉿cuddest)-[~/Downloads]</code><br />
+<code>└─$ file mdm.jpg</code>         </p>
+<p><code>mdm.jpg: Unicode text, UTF-8 (with BOM) text, with very long lines (65514), with CRLF line terminators</code></p>
+<p>This was a huge red flag, image usually are binary data not Unicode text.</p>
+<p>peeking more inside to see the first characters: </p>
+<p><code>┌──(cuddest㉿cuddest)-[~/Downloads]</code></p>
+<p><code>└─$ head -c 100 mdm.jpg</code></p>
+<p><code>$Content = @'</code></p>
+<p><code>$hexString_bbb = "4D_5A_90_00_03_00_00_00_04_00_00_00_FF_FF_00_00_B8_00_00_00_</code></p>
+<p>Hex encoded variable ! with an eye catching two first bytes <strong>4D 5A</strong>.<br />
+A fast search online confirmed that these are the magic bytes for <strong>Windows/DOS executable files</strong>. </p>
+<p>The smart step to do next is to extract the variable content and save it into an <strong>exe</strong> file, the get the sha256 hash using <strong>sha256sum</strong></p>
+<p><code>cat mdm.jpg | grep -oP '(?&lt;=hexString_bbb = ")[0-9A-F_]+' | tr -d '_' | tr -d '\n' | xxd -r -p | sha256sum</code></p>
+<p><code>1eb7b02e18f67420f42b1d94e74f3b6289d92672a0fb1786c30c03d68e81d798</code></p>
+<div class="answer">1eb7b02e18f67420f42b1d94e74f3b6289d92672a0fb1786c30c03d68e81d798</div>
+
+<ol start="4">
+<li><strong><em>What is the malware family label based on Alibaba?</em></strong></li>
+</ol>
+<p>Searching the new exe file we have now on VirusTotal, exactly in the Detection section, we find the malware family based on Alibaba.</p>
+<p><img alt="img" src="images/Pasted image 20260328173324.png" /></p>
+<div class="answer">asyncrat</div>
+
+<ol start="5">
+<li><strong><em><code>What is the timestamp of the malware's creation?</code></em></strong></li>
+</ol>
+<p>I used the objdump tool which is simple and good to deal with binaries, using the -p to get the header and grep the date:</p>
+<p><code>TZ=UTC objdump -p malware.exe | grep "Time/Date"</code></p>
+<p>NOTE: it has to be in UTC, i got at first the answer but it did not work until i searched online and figured out that the answer must be in UTC.</p>
+<ol start="6">
+<li><strong><em>Which LOLBin is leveraged for stealthy process execution in this script? Provide the full path.</em></strong></li>
+</ol>
+<p>grepping the standard start of windows files from the image file, we get this result that contains the answer for this question and the next quesiton too ! </p>
+<p><code>┌──(cuddest㉿cuddest)-[~/Downloads]</code></p>
+<p><code>└─$ grep -i "C:" mdm.jpg</code></p>
+<p><code>$NA = 'C:\W#######indow############s\Mi####cr'-replace  '#', ''</code></p>
+<p><code>[IO.File]::WriteAllText("C:\Users\Public\Conted.ps1", $Content)</code></p>
+<p><code>set "cmd=C:\Users\Public\Conted.ps1"</code></p>
+<p><code>[IO.File]::WriteAllText("C:\Users\Public\Conted.bat", $Content)</code></p>
+<p><code>filePath = "C:\Users\Public\Conted.bat"</code></p>
+<p><code>[IO.File]::WriteAllText("C:\Users\Public\Conted.vbs", $Content)</code></p>
+<p><code>$action.Path = "C:\Users\Public\Conted.vbs"</code></p>
+<p>After removing the #, we will extract the full path.</p>
+<div class="answer">**C:\Windows\Microsoft.NET\Framework\v4.0.30319\RegSvcs.exe</div>
+
+<ol start="7">
+<li><strong><em>The script is designed to drop several files. List the names of the files dropped by the script.</em></strong></li>
+</ol>
+<div class="answer">** Conted.vbs,Conted.ps1,Conted.bat</div>
+  </div>
+  <footer class="wpost-foot">
+    <a class="btn-line" href="../index.html#writing">← Back to all writeups</a>
+  </footer>
+</article>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span>© 2026 Ayoub Touati</span>
+    <span>Set in Geist &amp; JetBrains Mono</span>
+    <span><a class="ulink" href="../index.html#writing">Back to the site</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

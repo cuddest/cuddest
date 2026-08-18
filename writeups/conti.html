@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conti — Investigating a Compromised Exchange Server — cuddest</title>
+<meta name="description" content="Conti — Investigating a Compromised Exchange Server">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/writeups.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="logo" href="../index.html#writing" aria-label="cuddest — back to writeups">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+    <span class="topbar-cta"><a class="ulink" href="../index.html#writing">← All writeups</a></span>
+  </div>
+</header>
+
+<article class="wpost">
+  <header class="wpost-head">
+    <p class="wpost-meta"><span>2026-03-11</span><span>15 min read</span></p>
+    <h1>Conti — Investigating a Compromised Exchange Server</h1>
+  </header>
+  <div class="wpost-body">
+<h2>Overview:</h2>
+<p>This fun, medium diffuculty ranked room on TryHackMe simulate an investegation on a compromised Exchange server <strong>( Microsoft Exchange Server is an entreprise-level messaging and collab server, where you can send emails, shedule meetings and tasks, save contacts and communicate on the entreprise level securily)</strong>.</p>
+<p>We are going to use Splunk <strong>(Cisco's solution for analyzing, searching and monitoring huge amounts of data in real time, used  mainly as SIEM (Security Information and Event Management)).</strong></p>
+<p>After joining the room and  connecting to openvpn you can access the room by the URL provided or through the attackbox, to face the famous splunk interface !</p>
+<p>We navigatge to Search &amp; Reporting, filter by All Time, and of course, our first search is going to be index=*, just to make sure everything is ready , and boom  : <code>28,145</code> events. READY TO GO :))</p>
+<ol>
+<li><strong>Can you identify the location of the ransomware?</strong> <em>(HINT:Look for a common Windows binary located in an unusual location.)</em></li>
+</ol>
+<p>Ransomware operators use names that look like legitimate windows programs (eg: svchost.exe...), to trick administrators when checking task manager, but we still can check its legitimaty by checking the spelling, path, parent process ect...</p>
+<p>We gonna use this splunk querie: </p>
+<p><code>index=* host="*win-aoqkg2as2q7*" (EventCode=1 OR EventCode=4688) (Image="*\\svchost.exe" OR Image="*\\cmd.exe" OR Image="*\\rundll32.exe" OR Image="*\\explorer.exe" OR Image="*\\taskhostw.exe" OR Image="*\\notepad.exe" OR Image="*\\regsvr32.exe" OR Image="*\\lsass.exe")</code><br />
+<code>| search NOT (Image="*\\Windows\\System32\\*" OR Image="*\\Windows\\SysWOW64\\*" OR Image="*\\Windows\\explorer.exe")</code><br />
+<code>| table _time, ParentImage, Image, CommandLine</code></p>
+<p>Here we are : <br />
+- filtering by the host <em>win-aoqkg2as2q7</em>*<br />
+- looking for events with EventCode 1 or 4688 ( Windows Security Event ID are codes that help us understand what a specific event that was recoreded by Windows Event Log system represent , based on the code we can specify what was the event for. ( Windows Event Log system is a built-in events recoreder into all windows system that helps monitor and troubleshoot systems ))<br />
+- We asked Splunk to look for a list of very common, legitimate Windows programs (like <code>cmd.exe</code>, <code>svchost.exe</code>, <code>explorer.exe</code>).<br />
+- We then used the <code>NOT</code> command to tell Splunk: <em>"Ignore anything running from <code>C:\Windows\System32\</code> or <code>C:\Windows\SysWOW64\</code>"</em> (which are the only places those legitimate files should ever live).</p>
+<p>and GOTCHA ! </p>
+<p><img alt="img" src="images/Screenshot From 2026-03-10 18-23-58.png" /></p>
+<div class="answer">C:\Users\Administrator\Documents\cmd.exe</div>
+
+<p><strong>2.What is the Sysmon event ID for the related file creation event?</strong></p>
+<p>Sysmon is part of the powerfull system utilites <strong>Sysinternals suite</strong>, a strong, details oriented logging tool with extra feature that native logging tools may miss.</p>
+<p>like <strong>Windows Event Log</strong>, symson works with IDs to classify events, googling what is the ID of a creation event in symson, we get the answer easily.</p>
+<div class="answer">11</div>
+
+<p><strong>3.Can you find the MD5 hash of the ransomware?</strong></p>
+<p>oh yes we can, so since we have the image location of the ransomware, we can utilize that to search for any hashes using the <em>Hashes</em> field in our queires: </p>
+<p><code>index=* host="*win-aoqkg2as2q7*" source="*Sysmon*" EventCode=1 Image="C:\\Users\\Administrator\\Documents\\cmd.exe"</code><br />
+<code>| table _time, Image, Hashes</code></p>
+<p>et voilaaaa : </p>
+<p><img alt="img" src="images/Pasted image 20260310183242.png" /></p>
+<div class="answer">290c7dfb01e50cea9e19da81a781af2c</div>
+
+<p><strong>4.What file was saved to multiple folder locations?</strong></p>
+<p>Since we know the full path of where the ransomware resides, we can utilize that to find all the files it dropped around, not just that, but splunk allows us to rank these files by their count of appearance !</p>
+<p>Using : </p>
+<p><code>index=* host="*win-aoqkg2as2q7*" source="*Sysmon*" EventCode=11 Image="C:\\Users\\Administrator\\Documents\\cmd.exe"</code><br />
+<code>| eval FileName=mvindex(split(TargetFilename,"\\"),-1)</code><br />
+<code>| stats count by FileName</code><br />
+<code>| sort - count</code></p>
+<p>We are:<br />
+- searching through sysmon all the events of creation (EventCode 11) where the parent image is cmd.exe, our ransomware.</p>
+<p>and tarra ! there is only one result, created 18 times.</p>
+<p><img alt="img" src="images/Pasted image 20260311050625.png" /></p>
+<div class="answer">readme.txt</div>
+
+<p><strong>5.What was the command the attacker used to add a new user to the compromised system?</strong></p>
+<p>persistence time now huh? </p>
+<p>Well we know as a fact that if a hacker intended to create a new user account, he would type something like : </p>
+<p>net user hacker account Password123!</p>
+<p>so we will use : </p>
+<p><code>index=* host="*win-aoqkg2as2q7*" (EventCode=1 OR EventCode=4688) CommandLine="*net *user */add*"</code></p>
+<p><code>| table _time, User, ParentImage, Image, CommandLine</code></p>
+<p>So we can :<br />
+- Filter by creation events ( 1 for sysmon and 4688 for windows security log)<br />
+- look for any command simmilair to the user creation command.</p>
+<p>and wow, we found it !</p>
+<p><img alt="img" src="images/Screenshot From 2026-03-11 05-15-11.png" /></p>
+<div class="answer">net user /add securityninja hardToHack123$</div>
+
+<p><strong>6.The attacker migrated the process for better persistence. What is the migrated process image (executable), and what is the original process image (executable) when the attacker got on the system?</strong></p>
+<p>okay, first, we start with our hint, Event ID 8, mhm, a quick google search will help us understand that this id is for <strong>CreateRemoteThread</strong> event, this action exists to enable the injection of a thread from process A inside another process B memory ( and i know, why something like this exists? oh well some debuggers or antivirus use it so they get access to the memory of a process to enable better analyzing).</p>
+<p>so now that we have a basic understanding of what we have, we can use this query: </p>
+<p><code>index=* host="*win-aoqkg2as2q7*" source="*Sysmon*" EventCode=8</code><br />
+<code>| table _time, SourceImage, TargetImage</code></p>
+<p>to filter all EventCode=8 events.</p>
+<p>the results were fabulous !</p>
+<p><img alt="img" src="images/Screenshot From 2026-03-11 05-39-23.png" /></p>
+<p>Here we found two results, the first, time sense, is metigating from the beacon powershell process into this illigitimate created process unsecapp.exe ( you can notice that the path is illigitmate).</p>
+<p>and the second is metigating from the just created process into the legitimate windows process lsass.exe, which we will dive into later.</p>
+<p>but since the question is looking for the first mitigation. our answer is clear! </p>
+<div class="answer">C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe,C:\Windows\System32\wbem\unsecapp.exe</div>
+
+<p><strong>7.The attacker also retrieved the system hashes. What is the process image used for getting the system hashes?</strong></p>
+<p>WIndows Process Genealogy 101 Time !!</p>
+<p>So, when you boot your windows, processes spawn, right ? </p>
+<p>they spawn in a hieraichal structure forming a tree starting from the parent process System.(PID 4).</p>
+<p>then we go down to the first user mode process smss.exe, then bla bla bla, anyway, i have attached the tree down here if you wanna dive more into that, or check this video for better more in depth explanation : </p>
+<p>https://www.youtube.com/watch?v=s98_p3bheL0</p>
+<p>But that is not our job now, our job is to notice that this tree have a familliar process, you guessed it ? yes exactly  ! lsass.exe, the one we saw the last question !</p>
+<p>This process handles <strong>security and authentication</strong>:</p>
+<ul>
+<li>
+<p>User login validation</p>
+</li>
+<li>
+<p>NTLM / Kerberos</p>
+</li>
+<li>
+<p>Token generation</p>
+</li>
+</ul>
+<p>It is a  very sensitive process:</p>
+<ul>
+<li>Credential dumping tools (like Mimikatz) target it.</li>
+</ul>
+<p>so yeah, it is where system hashes resides, and the attacker used it to inject a thread using CreateRemoteThread, then access its memory to dump hashes.</p>
+<p>From the last question query result, we can extract our answer!</p>
+<div class="answer">C:\Windows\System32\lsass.exe</div>
+
+<p>What is the web shell the exploit deployed to the system? <em>Hint</em> : <em>Try looking in the IIS logs for POST requests</em>.<br />
+<code>i3gfPctK1c2x.aspx</code></p>
+<p>— Filtered <code>aspx</code> files using<code>index=* sourcetype="WinEventLog:Microsoft=Windows-Sysmon/Operational" *aspx</code> . There is one event.</p>
+<p><strong>8.What is the web shell the exploit deployed to the system?</strong></p>
+<p>First, we know that Microsoft Exchange runs on a software called ISS, that handles all the traffic, it uses ASP.NET, so based on these infos, we can filter all the web traffic based on these two informations, plus the hint given to us to filter by POST request, which will help a lot since malware developers love to use POST to hide their payloads in the body so logs dont catch it.</p>
+<p><code>index=* host="*win-aoqkg2as2q7*" sourcetype="*iis*" cs_method="POST" cs_uri_stem="*.aspx"</code></p>
+<p>and we end up with these four delicious results:</p>
+<p><img alt="img" src="images/Screenshot From 2026-03-11 14-37-37.png" /></p>
+<p>we can clearly see the name of the webshell deployed in the url.</p>
+<div class="answer">i3gfPctK1c2x.aspx</div>
+
+<p><strong>9.What is the command line that executed this web shell?</strong></p>
+<p>Well my first thought here was, since we have the name of the webshell, why dont we just look in sysmon logs and filter by its name and EventCode 11 ( creation id), using something that looks like this: </p>
+<p><code>index=* host="*win-aoqkg2as2q7*" sourcetype="*Sysmon*" EventCode=11 TargetFilename="*i3gfPctK1c2x.aspx"</code></p>
+<p>but this one failed, which was weird.</p>
+<p>after being stuck for sometime, i tried to look for any sysmon log that mention the filename, using something like this: </p>
+<p><code>index=* sourcetype="*Sysmon*" host="*win-aoqkg2as2q7*" "i3gfPctK1c2x.aspx"</code><br />
+<code>| table _time, sourcetype, EventCode, _raw</code></p>
+<p>And to my surprise, IT WORKED !</p>
+<p><img alt="img" src="images/Screenshot From 2026-03-11 14-47-44.png" /></p>
+<p>after some reflection and research, the only logical conclusion that i came into of why the first failed and the second worked was because  Administrators often configure Sysmon to ignore File Creation events (Event 11) in highly active directories like <code>C:\inetpub\</code> (the web server folders) because it generates too much noise and wastes storage. Because the event was never logged by the system, our highly specific query failed.</p>
+<div class="answer">attrib.exe  -r \\\\win-aoqkg2as2q7.bellybear.local\C$\Program Files\Microsoft\Exchange Server\V15\FrontEnd\HttpProxy\owa\auth\i3gfPctK1c2x.aspx</div>
+
+<p><strong>10.What three CVEs did this exploit leverage? Provide the answer in ascending order.</strong></p>
+<p>Doing some research online, i found this article that landed me the answer withing the first lines:</p>
+  </div>
+  <footer class="wpost-foot">
+    <a class="btn-line" href="../index.html#writing">← Back to all writeups</a>
+  </footer>
+</article>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span>© 2026 Ayoub Touati</span>
+    <span>Set in Geist &amp; JetBrains Mono</span>
+    <span><a class="ulink" href="../index.html#writing">Back to the site</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

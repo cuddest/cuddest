@@ -205,8 +205,7 @@
       )
       .join("");
 
-    const cats = [...new Set(WRITEUPS.map((w) => w.category))];
-    buildFilters("#writeupFilters", cats, "#writeupsList .item");
+    buildFilters("#writeupFilters", WRITEUP_CATEGORIES, "#writeupsList .item");
   }
 
   /* ---------------- ctf ---------------- */
