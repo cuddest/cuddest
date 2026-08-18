@@ -285,13 +285,13 @@ const CREDENTIALS = [
   {
     title: "Engineering Degree — Cybersecurity",
     issuer: "ESTIN — Béjaïa",
-    period: "2021 — 2027",
+    period: "2022 — 2027",
     note: "Final year. Higher School of Computer Science and Digital Technologies (ESTIN), Amizour campus. 5-year state engineer program — 2 years preparatory cycle + cybersecurity specialization.",
   },
   {
     title: "Baccalaureate — Scientific",
     issuer: "Omar Mokhtar High School",
-    period: "2021",
-    note: "Graduated with a very good mark.",
+    period: "2022",
+    note: "Graduated with honours (very good) — 16/20.",
   },
 ];
