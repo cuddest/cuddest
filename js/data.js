@@ -283,15 +283,15 @@ const CTFS = [
 ------------------------------------------------------------ */
 const CREDENTIALS = [
   {
-    title: "Example — B.Sc. Computer Science",
-    issuer: "Your University",
-    period: "2023 — 2026",
-    note: "Specialization in networks and security.",
+    title: "Engineering Degree — Cybersecurity",
+    issuer: "ESTIN — Béjaïa",
+    period: "2021 — 2027",
+    note: "Final year. Higher School of Computer Science and Digital Technologies (ESTIN), Amizour campus. 5-year state engineer program — 2 years preparatory cycle + cybersecurity specialization.",
   },
   {
-    title: "Example — Blue Team Level 1",
-    issuer: "Security Blue Team",
-    period: "2026",
-    note: "Defensive operations: SIEM, DFIR, threat intelligence.",
+    title: "Baccalaureate — Scientific",
+    issuer: "Omar Mokhtar High School",
+    period: "2021",
+    note: "Graduated with a very good mark.",
   },
 ];
