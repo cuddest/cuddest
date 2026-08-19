@@ -219,6 +219,17 @@ const WRITEUPS = [
       "Full hunt on FB-WKS64: phishing VBS → Google Drive staging → SilentConnect implant → AD enumeration → base64 HTTPS exfiltration.",
     url: "writeups/ghostconnect.html",
   },
+  {
+    title: "ELK Home SOC — Containerized Security Monitoring with the Elastic Stack",
+    tags: ["Elastic", "ELK", "SIEM", "Detection Engineering", "Docker", "SOC"],
+    event: "Project",
+    category: "Articles",
+    date: "2026-08-19",
+    readTime: "12 min",
+    summary:
+      "A reproducible Elastic Stack monitoring platform — Filebeat and Winlogbeat telemetry, Logstash normalization, Elasticsearch indexing, Kibana investigation and a detection engine, running in simulation, real and hybrid modes.",
+    url: "writeups/elk-security-monitoring.html",
+  },
 ];
 
 /* ------------------------------------------------------------

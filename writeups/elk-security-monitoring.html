@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ELK Home SOC — Containerized Security Monitoring with the Elastic Stack — cuddest</title>
+<meta name="description" content="A containerized security monitoring platform built on the Elastic Stack: Filebeat and Winlogbeat telemetry, Logstash normalization, Elasticsearch indexing, Kibana investigation and a lightweight detection engine — in simulation, real and hybrid modes.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/writeups.css">
+<link rel="stylesheet" href="../css/writeup-elk.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="logo" href="../index.html#writing" aria-label="cuddest — back to writeups">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+    <span class="topbar-cta"><a class="ulink" href="../index.html#writing">← All writeups</a></span>
+  </div>
+</header>
+
+<article class="wpost wpost-elk">
+
+  <!-- ================= HERO ================= -->
+  <header class="wpost-head elk-hero">
+    <p class="wpost-meta"><span>2026-08-19</span><span>12 min read</span><span>Articles</span></p>
+    <h1>ELK Home SOC — Containerized Security Monitoring with the Elastic Stack</h1>
+    <p class="elk-hero-desc">
+      A reproducible, containerized security monitoring platform built around the Elastic Stack.
+      Web, application, SSH and Windows telemetry flows through Filebeat and Winlogbeat into
+      Logstash, where it is parsed and normalized into Elasticsearch — then surfaced in Kibana
+      and evaluated by a lightweight detection engine. The same backend runs in three modes:
+      pure simulation, real endpoint collection, and a hybrid of both.
+    </p>
+
+    <div class="elk-stack" aria-label="Technology stack">
+      <span>Elasticsearch</span><span>Logstash</span><span>Kibana</span>
+      <span>Filebeat</span><span>Winlogbeat</span><span>Docker</span>
+      <span>Nginx</span><span>Flask</span><span>Python</span>
+    </div>
+
+    <div class="elk-hero-cta">
+      <a class="btn-line" href="https://github.com/cuddest/elk-home-soc" target="_blank" rel="noopener noreferrer">GitHub repo</a>
+      <a class="ulink" href="#elk-intro">Read the article</a>
+    </div>
+
+    <nav class="elk-toc" aria-label="Article contents">
+      <p class="kicker">Contents</p>
+      <ol>
+        <li><a href="#elk-intro">01 · Introduction</a></li>
+        <li><a href="#elk-goals">02 · Project goals</a></li>
+        <li><a href="#elk-arch">03 · Architecture</a></li>
+        <li><a href="#elk-modes">04 · Deployment modes</a></li>
+        <li><a href="#elk-sources">05 · Data sources</a></li>
+        <li><a href="#elk-collect">06 · Collection layer</a></li>
+        <li><a href="#elk-pipeline">07 · Logstash pipeline</a></li>
+        <li><a href="#elk-norm">08 · Event normalization</a></li>
+        <li><a href="#elk-es">09 · Elasticsearch</a></li>
+        <li><a href="#elk-kibana">10 · Kibana</a></li>
+        <li><a href="#elk-detect">11 · Detection engineering</a></li>
+        <li><a href="#elk-detections">12 · Detections</a></li>
+        <li><a href="#elk-sim">13 · Attack simulation</a></li>
+        <li><a href="#elk-invest">14 · Investigation walkthrough</a></li>
+        <li><a href="#elk-hardening">15 · Securing the platform</a></li>
+        <li><a href="#elk-real">16 · Real endpoint integration</a></li>
+        <li><a href="#elk-test">17 · Testing strategy</a></li>
+        <li><a href="#elk-threat">18 · Threat model</a></li>
+        <li><a href="#elk-limits">19 · Limitations</a></li>
+        <li><a href="#elk-future">20 · Future work</a></li>
+        <li><a href="#elk-lessons">21 · Lessons learned</a></li>
+        <li><a href="#elk-conclusion">22 · Conclusion</a></li>
+      </ol>
+    </nav>
+  </header>
+
+  <div class="wpost-body elk-body">
+
+    <!-- ================= 01 INTRO ================= -->
+    <section id="elk-intro" class="elk-sec">
+      <p class="elk-sec-num">01</p>
+      <h2>Introduction</h2>
+
+      <p>Modern systems generate an enormous amount of telemetry. Web servers record requests, applications
+      record user activity, Linux machines record authentication events, and Windows systems generate detailed
+      security events. The challenge is not simply collecting those logs — the real challenge is turning them
+      into information that can be <strong>searched, correlated, detected, and investigated</strong>.</p>
+
+      <p>For this project I built a containerized security monitoring lab around the Elastic Stack with the goal
+      of reproducing a small SOC-style workflow:</p>
+
+      <div class="elk-flow" aria-label="Telemetry lifecycle">
+        <span>Collect telemetry</span><i>↓</i>
+        <span>Normalize &amp; enrich</span><i>↓</i>
+        <span>Store &amp; index</span><i>↓</i>
+        <span>Detect suspicious activity</span><i>↓</i>
+        <span>Investigate</span><i>↓</i>
+        <span>Build an incident timeline</span>
+      </div>
+
+      <p>Logs alone are not a monitoring platform. A raw log line is only the beginning — the value comes from
+      transforming telemetry into structure, structure into context, and context into detections that an analyst
+      can actually investigate.</p>
+    </section>
+
+    <!-- ================= 02 GOALS ================= -->
+    <section id="elk-goals" class="elk-sec">
+      <p class="elk-sec-num">02</p>
+      <h2>Project goals</h2>
+
+      <p>The project was designed around a few clear objectives:</p>
+
+      <div class="elk-cards">
+        <div class="elk-card">
+          <h3>Centralized collection</h3>
+          <p>Treat every log source as part of one telemetry stream instead of managing each independently.</p>
+        </div>
+        <div class="elk-card">
+          <h3>Consistent structure</h3>
+          <p>Normalize events so different systems can be investigated together, not in silos.</p>
+        </div>
+        <div class="elk-card">
+          <h3>Real detections</h3>
+          <p>Go beyond dashboards — actually detect suspicious patterns and produce alerts.</p>
+        </div>
+        <div class="elk-card">
+          <h3>Reproducibility</h3>
+          <p>Clone it, start it, generate the same activity, and reproduce the same investigation.</p>
+        </div>
+        <div class="elk-card">
+          <h3>Extensible</h3>
+          <p>Evolve from synthetic generators toward real Linux and Windows endpoints without redesigning the backend.</p>
+        </div>
+      </div>
+
+      <p>The resulting architecture therefore had to satisfy five requirements:</p>
+      <div class="elk-flow elk-flow-row" aria-label="Requirements">
+        <span>Reproducible</span><span>Secure</span><span>Searchable</span><span>Detection-oriented</span><span>Extensible to real endpoints</span>
+      </div>
+    </section>
+
+    <!-- ================= 03 ARCHITECTURE ================= -->
+    <section id="elk-arch" class="elk-sec">
+      <p class="elk-sec-num">03</p>
+      <h2>Architecture</h2>
+
+      <p>The platform is built around a linear pipeline, each layer with a distinct responsibility.
+      Click any component to see what it does, why it exists, and what flows in and out of it.</p>
+
+      <div class="elk-diagram" role="group" aria-label="Interactive architecture diagram">
+
+        <div class="elk-row elk-sources">
+          <button class="elk-node" data-node="nginx" type="button">Nginx</button>
+          <button class="elk-node" data-node="flask" type="button">Flask</button>
+          <button class="elk-node" data-node="ssh" type="button">SSH</button>
+          <button class="elk-node" data-node="windows" type="button">Windows</button>
+        </div>
+        <div class="elk-edge">↓</div>
+
+        <div class="elk-row elk-collectors">
+          <button class="elk-node" data-node="filebeat" type="button">Filebeat</button>
+          <button class="elk-node" data-node="winlogbeat" type="button">Winlogbeat</button>
+        </div>
+        <div class="elk-edge">↓</div>
+
+        <div class="elk-center">
+          <button class="elk-node elk-wide" data-node="logstash" type="button">Logstash <small>parse · normalize · enrich · route</small></button>
+        </div>
+        <div class="elk-edge">↓</div>
+
+        <div class="elk-center">
+          <button class="elk-node elk-wide" data-node="es" type="button">Elasticsearch <small>search · aggregation · storage</small></button>
+        </div>
+        <div class="elk-edge">↓</div>
+
+        <div class="elk-row elk-outputs">
+          <button class="elk-node" data-node="kibana" type="button">Kibana</button>
+          <button class="elk-node" data-node="detection" type="button">Detection engine</button>
+        </div>
+      </div>
+
+      <div class="elk-nodeinfo" id="elkNodeInfo" role="region" aria-live="polite" tabindex="0">
+        <p class="kicker" id="elkNodeTitle">Select a component</p>
+        <p id="elkNodeText">Click any box in the diagram to inspect its role in the pipeline.</p>
+      </div>
+
+      <h3>Why the Elastic Stack?</h3>
+      <p>The Elastic Stack was a natural fit because it separates the stages of the pipeline instead of
+      squeezing collection, parsing, storage and visualization into one monolith. Each component has a clear
+      role: Filebeat collects, Logstash processes, Elasticsearch stores and searches, Kibana visualizes.</p>
+      <p>This separation also makes the environment easy to extend. Replacing a simulated Windows source with a
+      real Windows endpoint does not require redesigning Elasticsearch or Kibana — the source changes while the
+      downstream pipeline stays the same.</p>
+    </section>
+
+    <!-- ================= 04 MODES ================= -->
+    <section id="elk-modes" class="elk-sec">
+      <p class="elk-sec-num">04</p>
+      <h2>Deployment modes</h2>
+
+      <p>A major design decision was avoiding a forced choice between realism and reproducibility. The same
+      backend operates in three modes, driven by the selector below.</p>
+
+      <div class="elk-modes">
+        <div class="elk-mode-tabs" role="tablist" aria-label="Deployment modes">
+          <button class="elk-mode-tab active" id="tab-sim" role="tab" aria-selected="true" aria-controls="panel-sim" data-mode="sim" type="button">Simulation</button>
+          <button class="elk-mode-tab" id="tab-real" role="tab" aria-selected="false" aria-controls="panel-real" data-mode="real" type="button">Real</button>
+          <button class="elk-mode-tab" id="tab-hybrid" role="tab" aria-selected="false" aria-controls="panel-hybrid" data-mode="hybrid" type="button">Hybrid</button>
+        </div>
+
+        <div class="elk-mode-panel active" id="panel-sim" role="tabpanel" aria-labelledby="tab-sim">
+          <div class="elk-mode-diagram" aria-label="Simulation mode pipeline">
+            <div class="elk-row"><span class="elk-node mini">Nginx</span><span class="elk-node mini">Flask</span><span class="elk-node mini">SSH generator</span><span class="elk-node mini">Windows generator</span></div>
+            <div class="elk-edge">↓</div>
+            <div class="elk-center"><span class="elk-node mini">Filebeat</span></div>
+            <div class="elk-edge">↓</div>
+            <div class="elk-center"><span class="elk-node mini">Logstash</span></div>
+            <div class="elk-edge">↓</div>
+            <div class="elk-center"><span class="elk-node mini">Elasticsearch</span></div>
+            <div class="elk-edge">↓</div>
+            <div class="elk-center"><span class="elk-node mini">Kibana</span></div>
+          </div>
+          <p>All telemetry is generated locally — Nginx and Flask run inside the environment and produce real
+          application traffic, while SSH and Windows events come from synthetic generators. This mode is useful
+          for first-time setup, demos, automated tests, reproducing attack scenarios, and working without extra
+          machines.</p>
+        </div>
+
+        <div class="elk-mode-panel" id="panel-real" role="tabpanel" aria-labelledby="tab-real" hidden>
+          <div class="elk-mode-diagram" aria-label="Real endpoint mode pipeline">
+            <div class="elk-row">
+              <div class="elk-col"><span class="elk-node mini">Real Linux</span><span class="elk-node mini">Filebeat</span></div>
+              <div class="elk-col"><span class="elk-node mini">Real Windows</span><span class="elk-node mini">Winlogbeat</span></div>
+            </div>
+            <div class="elk-edge">↓</div>
+            <div class="elk-center"><span class="elk-node mini">Logstash</span></div>
+            <div class="elk-edge">↓</div>
+            <div class="elk-center"><span class="elk-node mini">Elasticsearch</span></div>
+            <div class="elk-edge">↓</div>
+            <div class="elk-center"><span class="elk-node mini">Kibana</span></div>
+          </div>
+          <p>The Elastic backend runs locally while external endpoints provide the telemetry. Agents run on the
+          endpoints themselves and ship events into the pipeline, which stays identical to the simulation path.</p>
+        </div>
+
+        <div class="elk-mode-panel" id="panel-hybrid" role="tabpanel" aria-labelledby="tab-hybrid" hidden>
+          <div class="elk-mode-diagram" aria-label="Hybrid mode pipeline">
+            <div class="elk-row">
+              <div class="elk-col">
+                <span class="elk-node mini">Docker Nginx</span>
+                <span class="elk-node mini">Docker Flask</span>
+                <span class="elk-node mini">Synthetic SSH</span>
+                <span class="elk-node mini">Synthetic Windows</span>
+              </div>
+              <div class="elk-col">
+                <span class="elk-node mini">Real Linux → Filebeat</span>
+                <span class="elk-node mini">Real Windows → Winlogbeat</span>
+              </div>
+            </div>
+            <div class="elk-edge">↓</div>
+            <div class="elk-center"><span class="elk-node mini">Logstash</span></div>
+            <div class="elk-edge">↓</div>
+            <div class="elk-center"><span class="elk-node mini">Elasticsearch</span></div>
+            <div class="elk-edge">↓</div>
+            <div class="elk-center"><span class="elk-node mini">Kibana</span></div>
+          </div>
+          <p>Both worlds feed the same backend at the same time. This is the closest representation of a mixed
+          enterprise environment — controlled security scenarios coexisting with genuine endpoint telemetry,
+          all investigated from the same Kibana instance.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 05 DATA SOURCES ================= -->
+    <section id="elk-sources" class="elk-sec">
+      <p class="elk-sec-num">05</p>
+      <h2>Data sources</h2>
+
+      <p>The lab intentionally mixes real and synthetic telemetry. The badges below make the distinction
+      explicit, because simulated data must never be mistaken for genuine production telemetry.</p>
+
+      <div class="elk-cards">
+        <div class="elk-card">
+          <span class="elk-badge real">Live in the lab</span>
+          <h3>Nginx</h3>
+          <p>Real web access logs — source IP, method, path, status, bytes, user agent, timestamp. An actual
+          Nginx instance runs inside the environment, so this is genuine application telemetry, not a generator.</p>
+        </div>
+        <div class="elk-card">
+          <span class="elk-badge real">Live in the lab</span>
+          <h3>Flask application</h3>
+          <p>Structured JSON request events from a small application behind Nginx. Exposes <code>/api/health</code>,
+          <code>/api/products</code>, <code>/api/cart</code>, <code>/api/checkout</code>, <code>/api/login</code>,
+          <code>/api/admin</code>, <code>/api/error</code> and <code>/api/slow</code> — providing controlled
+          endpoints for security testing alongside realistic application telemetry.</p>
+        </div>
+        <div class="elk-card">
+          <span class="elk-badge synth">Synthetic — reproducible</span>
+          <h3>SSH</h3>
+          <p>A generator produces realistic authentication events on demand — failed logins, success, and
+          targeted-user patterns. An optional container can instead run a real <code>sshd</code> to generate
+          genuine authentication activity.</p>
+        </div>
+        <div class="elk-card">
+          <span class="elk-badge synth">Synthetic — reproducible</span>
+          <h3>Windows</h3>
+          <p>A generator emits structured security events representing common logon events — notably
+          <strong>4624</strong> (successful logon) and <strong>4625</strong> (failed logon) — so authentication
+          scenarios can be reproduced with no Windows machine present.</p>
+        </div>
+        <div class="elk-card">
+          <span class="elk-badge ext">Optional real integration</span>
+          <h3>Linux endpoint</h3>
+          <p>A real machine runs Filebeat locally and ships its logs into the lab. This is where the
+          simulation architecture extends to production-style collection.</p>
+        </div>
+        <div class="elk-card">
+          <span class="elk-badge ext">Optional real integration</span>
+          <h3>Windows endpoint</h3>
+          <p>A real Windows host runs Winlogbeat, which reads Windows Event Logs locally and forwards them to
+          Logstash. The repository ships a reference <code>winlogbeat.yml</code> for configuring this.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 06 COLLECTION ================= -->
+    <section id="elk-collect" class="elk-sec">
+      <p class="elk-sec-num">06</p>
+      <h2>Collection layer</h2>
+
+      <p>The collection layer moves events from their source into the processing pipeline.
+      <strong>Filebeat</strong> handles Linux, web and application-style log collection.
+      <strong>Winlogbeat</strong> reads Windows Event Logs.</p>
+
+      <p>The key design principle: the downstream pipeline should not care whether an event came from a
+      generator, a Docker container, a Linux machine or a Windows machine. As long as the event can be
+      represented consistently, the rest of the system processes it the same way. This is what makes the
+      simulation → real endpoint migration a configuration change rather than a redesign.</p>
+
+      <p>In simulation, the agents tail locally generated files. On real endpoints, the agents run on the
+      machines themselves and ship events over the network (optionally over TLS) to Logstash. The reference
+      configuration for that lives in the repository — endpoints do not read the lab's configuration remotely.</p>
+    </section>
+
+    <!-- ================= 07 LOGSTASH PIPELINE ================= -->
+    <section id="elk-pipeline" class="elk-sec">
+      <p class="elk-sec-num">07</p>
+      <h2>Logstash — the processing layer</h2>
+
+      <p>Logstash is where raw telemetry becomes usable security data. Click each stage to see what it does.</p>
+
+      <div class="elk-pipeline">
+        <div class="elk-stage" data-stage="p-input">
+          <button class="elk-stage-btn" type="button" aria-expanded="false" aria-controls="p-input">Input</button>
+        </div>
+        <div class="elk-stage" data-stage="p-parse">
+          <button class="elk-stage-btn" type="button" aria-expanded="false" aria-controls="p-parse">Parsing</button>
+        </div>
+        <div class="elk-stage" data-stage="p-norm">
+          <button class="elk-stage-btn" type="button" aria-expanded="false" aria-controls="p-norm">Normalization</button>
+        </div>
+        <div class="elk-stage" data-stage="p-type">
+          <button class="elk-stage-btn" type="button" aria-expanded="false" aria-controls="p-type">Type conversion</button>
+        </div>
+        <div class="elk-stage" data-stage="p-enrich">
+          <button class="elk-stage-btn" type="button" aria-expanded="false" aria-controls="p-enrich">Enrichment</button>
+        </div>
+        <div class="elk-stage" data-stage="p-route">
+          <button class="elk-stage-btn" type="button" aria-expanded="false" aria-controls="p-route">Routing</button>
+        </div>
+        <div class="elk-stage" data-stage="p-es">
+          <button class="elk-stage-btn" type="button" aria-expanded="false" aria-controls="p-es">Elasticsearch</button>
+        </div>
+      </div>
+
+      <div class="elk-stageinfo" id="p-input" hidden>
+        <p>Beats agents connect and stream events in over the Beats protocol. Logstash listens as the
+        ingestion endpoint of the whole pipeline.</p>
+      </div>
+      <div class="elk-stageinfo" id="p-parse" hidden>
+        <p>Raw lines arrive as strings. A pattern such as
+        <code>172.23.0.1 - - "GET /products HTTP/1.1" 200</code> is parsed into named fields:
+        <code>source.ip</code>, <code>http.request.method</code>, <code>url.path</code> and
+        <code>http.response.status_code</code>.</p>
+      </div>
+      <div class="elk-stageinfo" id="p-norm" hidden>
+        <p>Different systems represent timestamps differently. The pipeline converts them into a common
+        <code>@timestamp</code>, which is essential for time-based queries, timelines, dashboards and event
+        correlation.</p>
+      </div>
+      <div class="elk-stageinfo" id="p-type" hidden>
+        <p>A field such as <code>"404"</code> is converted into the numeric value <code>404</code>, enabling
+        proper aggregations and comparisons.</p>
+      </div>
+      <div class="elk-stageinfo" id="p-enrich" hidden>
+        <p>Source IP addresses can be enriched with additional context, such as geographic information, when the
+        relevant data is available.</p>
+      </div>
+      <div class="elk-stageinfo" id="p-route" hidden>
+        <p>Events are routed to dedicated indexes by source — <code>logs-nginx-*</code>,
+        <code>logs-application-*</code>, <code>logs-ssh-*</code>, <code>logs-windows-*</code> — while security
+        alerts are stored separately in <code>security-detections-*</code>.</p>
+      </div>
+      <div class="elk-stageinfo" id="p-es" hidden>
+        <p>The processed, normalized events are indexed into Elasticsearch, where they become searchable and
+        aggregable.</p>
+      </div>
+    </section>
+
+    <!-- ================= 08 NORMALIZATION ================= -->
+    <section id="elk-norm" class="elk-sec">
+      <p class="elk-sec-num">08</p>
+      <h2>Raw event → normalized event</h2>
+
+      <p>One of the most important design goals was consistency. Different systems naturally use different field
+      names — <code>source_ip</code>, <code>src_ip</code>, <code>client_ip</code>, <code>remote_ip</code> — even
+      though they all mean the same thing. The project follows ECS-style semantics where practical, so cross-source
+      investigations use one common vocabulary.</p>
+
+      <div class="elk-transform">
+        <div class="elk-tf-raw" id="elkTfRaw">
+          <p class="kicker">Raw log</p>
+          <pre>172.23.0.1 - - "GET /admin HTTP/1.1" 404 - "-" "curl/8.0"</pre>
+        </div>
+        <div class="elk-edge">↓ Logstash</div>
+        <div class="elk-tf-norm" id="elkTfNorm">
+          <p class="kicker">Normalized event</p>
+          <div class="elk-fields">
+            <span><b>@timestamp</b> 2026-08-19T00:00:00Z</span>
+            <span><b>source.ip</b> 172.23.0.1</span>
+            <span><b>http.request.method</b> GET</span>
+            <span><b>url.path</b> /admin</span>
+            <span><b>http.response.status_code</b> 404</span>
+            <span><b>event.outcome</b> failure</span>
+          </div>
+        </div>
+      </div>
+
+      <p>Normalization makes events comparable. Because SSH and Windows telemetry both expose
+      <code>source.ip</code>, <code>user.name</code> and <code>@timestamp</code>, the same investigation
+      methodology works across both sources.</p>
+    </section>
+
+    <!-- ================= 09 ELASTICSEARCH ================= -->
+    <section id="elk-es" class="elk-sec">
+      <p class="elk-sec-num">09</p>
+      <h2>Elasticsearch</h2>
+
+      <p>Elasticsearch stores processed events as indexed documents. Instead of searching massive raw log files,
+      an analyst can query structured fields directly:</p>
+
+      <div class="elk-queries">
+        <div class="elk-query"><code>event.outcome: failure</code><span>all failed events</span></div>
+        <div class="elk-query"><code>source.ip: 185.234.72.45</code><span>everything from one address</span></div>
+        <div class="elk-query"><code>event.code: 4625</code><span>Windows failed logons</span></div>
+      </div>
+
+      <p>The data is also suitable for aggregation — counting authentication failures, grouping by
+      <code>source.ip</code>, grouping by <code>user.name</code>. This lets the platform move from raw events to
+      patterns, which is the foundation for detection.</p>
+    </section>
+
+    <!-- ================= 10 KIBANA ================= -->
+    <section id="elk-kibana" class="elk-sec">
+      <p class="elk-sec-num">10</p>
+      <h2>Kibana</h2>
+
+      <p>Kibana is the analyst-facing interface, with two primary uses.</p>
+
+      <div class="elk-cards">
+        <div class="elk-card">
+          <h3>Discover</h3>
+          <p>Event-level investigation. An analyst searches <code>source.ip:185.234.72.45</code> and walks
+          chronologically through the telemetry, inspecting every relevant event around an alert.</p>
+        </div>
+        <div class="elk-card">
+          <h3>Dashboards</h3>
+          <p>A higher-level view. The project is designed around dashboards for a SOC overview, authentication,
+          web security, Windows security, application health and monitoring-pipeline health — tracking total
+          events, auth failures/successes, HTTP 4xx/5xx, top source IPs, top users and events over time.</p>
+        </div>
+      </div>
+
+      <p>The dashboard is not meant to replace investigation — it drives it: identify an anomaly, drop into
+      Discover, and investigate the events underneath.</p>
+    </section>
+
+    <!-- ================= 11 DETECTION ENGINEERING ================= -->
+    <section id="elk-detect" class="elk-sec">
+      <p class="elk-sec-num">11</p>
+      <h2>Detection engineering</h2>
+
+      <p>A monitoring platform is much more useful when it can recognize suspicious behavior. The project
+      includes a lightweight detection engine whose logic focuses on <strong>patterns rather than single
+      events</strong> — repeated failures, threshold crossings, and sequences that look like compromise.</p>
+
+      <div class="elk-flow" aria-label="Detection flow">
+        <span>Telemetry</span><i>↓</i>
+        <span>Detection</span><i>↓</i>
+        <span>Alert</span><i>↓</i>
+        <span>Investigation</span>
+      </div>
+
+      <p>When a detection triggers, the engine creates a structured alert stored separately from ordinary
+      telemetry in <code>security-detections-*</code>, carrying the rule name, source and severity so it can be
+      triaged like any other security event.</p>
+    </section>
+
+    <!-- ================= 12 DETECTIONS ================= -->
+    <section id="elk-detections" class="elk-sec">
+      <p class="elk-sec-num">12</p>
+      <h2>Detections</h2>
+
+      <p>Five representative detections demonstrate the engine. Open each card for the logic, the threshold, and
+      the investigation approach.</p>
+
+      <div class="elk-detections">
+        <details class="elk-detection">
+          <summary>SSH brute force</summary>
+          <div class="elk-det-body">
+            <p><b>Source:</b> SSH authentication events from the generator or a real <code>sshd</code>.</p>
+            <p><b>Logic:</b> count failed SSH events, group by <code>source.ip</code>, apply a time window, compare
+            against a threshold, then create an alert.</p>
+            <p><b>Why it matters:</b> a burst of failures from one address is the classic signal of password
+            guessing, and it is the most common precursor to real SSH intrusions.</p>
+            <p><b>Investigation:</b> pivot to the source IP, list the targeted users, and check whether any failure
+            was followed by a success.</p>
+          </div>
+        </details>
+
+        <details class="elk-detection">
+          <summary>Windows brute force</summary>
+          <div class="elk-det-body">
+            <p><b>Source:</b> Windows security events — repeated <code>4625</code> (failed logon) events.</p>
+            <p><b>Logic:</b> same principle as SSH — repeated <code>4625</code> events from the same source.</p>
+            <p><b>Why it matters:</b> Windows is a primary target in every environment; failed logon bursts
+            indicate attempts against domain or local accounts.</p>
+            <p><b>Investigation:</b> look for <code>4624</code> (successful logon) events from that source after
+            the failures.</p>
+          </div>
+        </details>
+
+        <details class="elk-detection">
+          <summary>Authentication failure → success</summary>
+          <div class="elk-det-body">
+            <p><b>Source:</b> correlated SSH and/or Windows authentication telemetry.</p>
+            <p><b>Logic:</b> repeated failures from the same source, then a successful login.</p>
+            <p><b>Why it matters:</b> this does not automatically prove compromise, but it is a strong
+            investigation lead — exactly the kind of correlation a SOC hunts for.</p>
+            <p><b>Investigation:</b> ask who authenticated, from where, against which host, when the success
+            happened, and what occurred immediately afterwards.</p>
+          </div>
+        </details>
+
+        <details class="elk-detection">
+          <summary>Web scanning</summary>
+          <div class="elk-det-body">
+            <p><b>Source:</b> Nginx access logs.</p>
+            <p><b>Logic:</b> the same source IP generating many <code>404</code> responses across sensitive or
+            unusual paths — <code>/admin</code>, <code>/.env</code>, <code>/wp-admin</code>, <code>/phpmyadmin</code>.</p>
+            <p><b>Why it matters:</b> scanning is reconnaissance; it tells you which endpoints an attacker is
+            probing before an exploit.</p>
+            <p><b>Investigation:</b> enumerate the probed paths, compare against the application's real routes,
+            and check for any later successful requests to those paths.</p>
+          </div>
+        </details>
+
+        <details class="elk-detection">
+          <summary>Application error bursts</summary>
+          <div class="elk-det-body">
+            <p><b>Source:</b> Flask application telemetry; the app exposes an endpoint that intentionally
+            generates server errors.</p>
+            <p><b>Logic:</b> monitor abnormal increases in HTTP <code>5xx</code> responses (<code>500</code>,
+            <code>502</code>, <code>503</code>).</p>
+            <p><b>Why it matters:</b> a sudden error spike can indicate application failure, dependency or
+            configuration problems, abusive requests, or an operational incident — security monitoring and
+            observability frequently overlap.</p>
+            <p><b>Investigation:</b> correlate error spikes in time with authentication or web-scanning alerts.</p>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- ================= 13 ATTACK SIMULATION ================= -->
+    <section id="elk-sim" class="elk-sec">
+      <p class="elk-sec-num">13</p>
+      <h2>Attack simulation</h2>
+
+      <p>One of the most useful features is that attack scenarios are reproducible. Instead of manually recreating
+      each scenario, the generators produce the necessary telemetry with a single command. All of the following are
+      deliberate, controlled lab scenarios:</p>
+
+      <div class="elk-cards">
+        <div class="elk-card"><h3>SSH brute force</h3><p>Repeated failed authentications from one or more source addresses.</p></div>
+        <div class="elk-card"><h3>Windows authentication failures</h3><p>Bursts of <code>4625</code> events to reproduce logon guessing.</p></div>
+        <div class="elk-card"><h3>Failure → success</h3><p>Failed attempts followed by a successful authentication.</p></div>
+        <div class="elk-card"><h3>Web scanning</h3><p>Repeated suspicious paths such as <code>/admin</code>, <code>/.env</code>, <code>/wp-admin</code>.</p></div>
+        <div class="elk-card"><h3>Application error bursts</h3><p>Intentional <code>5xx</code> spikes from the Flask endpoint.</p></div>
+      </div>
+
+      <p>For example, a Windows failure scenario is generated with:</p>
+      <pre><code>python3 generators/windows/generate_windows_events.py \
+  --count 12 --mode failure</code></pre>
+      <p>and a web scan with:</p>
+      <pre><code>python3 generators/web/generate_web_scan.py --count 20</code></pre>
+    </section>
+
+    <!-- ================= 14 INVESTIGATION ================= -->
+    <section id="elk-invest" class="elk-sec">
+      <p class="elk-sec-num">14</p>
+      <h2>Investigation walkthrough</h2>
+
+      <p>Once an alert fires, the project follows a basic SOC methodology. The goal is not to say
+      <em>"there were many failed logins"</em> — it is to determine what happened, when, which system and account
+      were involved, and what happened afterwards.</p>
+
+      <div class="elk-flow elk-flow-row" aria-label="Investigation steps">
+        <span>Alert</span><span>Triage</span><span>Identify source</span><span>Identify target</span>
+        <span>Establish timeline</span><span>Correlate events</span><span>Assess impact</span><span>Document</span>
+      </div>
+
+      <p>Suppose an SSH brute-force alert names <code>185.234.72.45</code> as the source. The first step is to
+      search all related authentication events. Click each entry to inspect it.</p>
+
+      <div class="elk-timeline">
+        <button class="elk-event" type="button" aria-expanded="false" aria-controls="ev-1">
+          <span class="elk-time">09:31:03</span><span>SSH authentication failure</span>
+        </button>
+        <div class="elk-ev-detail" id="ev-1" hidden>Another failed attempt from 185.234.72.45 against a system account.</div>
+
+        <button class="elk-event" type="button" aria-expanded="false" aria-controls="ev-2">
+          <span class="elk-time">09:31:04</span><span>SSH authentication failure</span>
+        </button>
+        <div class="elk-ev-detail" id="ev-2" hidden>Same source, same target account — the pattern is building.</div>
+
+        <button class="elk-event" type="button" aria-expanded="false" aria-controls="ev-3">
+          <span class="elk-time">09:31:05</span><span>SSH authentication failure</span>
+        </button>
+        <div class="elk-ev-detail" id="ev-3" hidden>A third rapid failure — this is no longer coincidence.</div>
+
+        <button class="elk-event" type="button" aria-expanded="false" aria-controls="ev-4">
+          <span class="elk-time">09:31:07</span><span>SSH authentication failure</span>
+        </button>
+        <div class="elk-ev-detail" id="ev-4" hidden>Fourth failure, still the same source IP and user.</div>
+
+        <button class="elk-event" type="button" aria-expanded="false" aria-controls="ev-5">
+          <span class="elk-time">09:31:10</span><span>SSH authentication success</span>
+        </button>
+        <div class="elk-ev-detail" id="ev-5" hidden>The failures were followed by a successful login — the key escalation point.</div>
+
+        <button class="elk-event" type="button" aria-expanded="false" aria-controls="ev-6">
+          <span class="elk-time">09:31:17</span><span>Application request</span>
+        </button>
+        <div class="elk-ev-detail" id="ev-6" hidden>Immediately after the success, application activity from the same source.</div>
+
+        <button class="elk-event" type="button" aria-expanded="false" aria-controls="ev-7">
+          <span class="elk-time">09:31:20</span><span>Administrative endpoint request</span>
+        </button>
+        <div class="elk-ev-detail" id="ev-7" hidden>A request to an administrative endpoint — the post-compromise narrative completes.</div>
+      </div>
+
+      <p>The investigation then expands: search <code>source.ip:185.234.72.45</code> and inspect nearby events to
+      build the full timeline. An individual event may be harmless; a sequence of related events tells a much
+      stronger story. That correlation is the core skill this walkthrough demonstrates.</p>
+    </section>
+
+    <!-- ================= 15 HARDENING ================= -->
+    <section id="elk-hardening" class="elk-sec">
+      <p class="elk-sec-num">15</p>
+      <h2>Securing the platform</h2>
+
+      <p>A security monitoring platform should itself be protected. The deployment deliberately moves away from an
+      unauthenticated development environment. The hardened configuration introduces Elasticsearch
+      authentication, TLS, restricted port exposure, dedicated service credentials, secret separation, and internal
+      Docker networking.</p>
+
+      <blockquote>The system collecting sensitive security telemetry should not itself become an easy target.</blockquote>
+
+      <div class="elk-before-after">
+        <div class="elk-ba-card before">
+          <p class="kicker">Before — unauthenticated dev</p>
+          <ul>
+            <li>Elasticsearch reachable on <code>:9200</code> with no auth</li>
+            <li>No TLS between components</li>
+            <li>Services exposed broadly</li>
+            <li>Shared credentials</li>
+          </ul>
+        </div>
+        <div class="elk-ba-card after">
+          <p class="kicker">After — hardened</p>
+          <ul>
+            <li>Elasticsearch behind the internal Docker network</li>
+            <li>Only the required interfaces exposed</li>
+            <li>TLS for component communication</li>
+            <li>Dedicated service credentials</li>
+            <li>Secrets separated from configuration</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Why Elasticsearch should not be public</h3>
+      <p>Security telemetry may contain IP addresses, usernames, hostnames, authentication events, application
+      activity and system information. Exposing Elasticsearch unnecessarily creates an additional attack surface.
+      The intended access path is:</p>
+
+      <div class="elk-flow" aria-label="External access path">
+        <span>External user</span><i>↓</i><span>Kibana / controlled interface</span><i>↓</i><span>Elasticsearch</span>
+      </div>
+
+      <p>rather than exposing <code>Elasticsearch :9200</code> directly to the internet.</p>
+    </section>
+
+    <!-- ================= 16 REAL ENDPOINT INTEGRATION ================= -->
+    <section id="elk-real" class="elk-sec">
+      <p class="elk-sec-num">16</p>
+      <h2>Real endpoint integration</h2>
+
+      <p>The project is not limited to Docker. A real Linux machine runs Filebeat locally and ships telemetry into
+      the lab; a real Windows machine runs Winlogbeat locally and reads its Event Logs.</p>
+
+      <div class="elk-cards">
+        <div class="elk-card">
+          <h3>Linux</h3>
+          <div class="elk-flow" aria-label="Linux endpoint flow">
+            <span>Linux</span><i>↓</i><span>Filebeat</span><i>↓</i><span>Logstash</span><i>↓</i><span>Elasticsearch</span>
+          </div>
+          <p>Filebeat runs on the endpoint itself. The repository provides the reference configuration; the
+          endpoint does not remotely read the lab's config.</p>
+        </div>
+        <div class="elk-card">
+          <h3>Windows</h3>
+          <div class="elk-flow" aria-label="Windows endpoint flow">
+            <span>Windows Event Log</span><i>↓</i><span>Winlogbeat</span><i>↓</i><span>Logstash</span><i>↓</i><span>Elasticsearch</span>
+          </div>
+          <p>Winlogbeat runs on the Windows host and forwards events (optionally over TLS). A reference
+          <code>winlogbeat.yml</code> ships in the repository.</p>
+        </div>
+      </div>
+
+      <p>The same backend can therefore collect telemetry from Docker containers, Linux endpoints, Windows
+      endpoints, servers and workstations — one pipeline, many sources.</p>
+    </section>
+
+    <!-- ================= 17 TESTING ================= -->
+    <section id="elk-test" class="elk-sec">
+      <p class="elk-sec-num">17</p>
+      <h2>Testing strategy</h2>
+
+      <p>A security platform can fail at multiple layers — an alert not appearing could mean the generator failed,
+      the agent failed, Logstash failed, parsing failed, indexing failed, or the detection itself failed. The
+      project therefore tests layers independently.</p>
+
+      <div class="elk-cards">
+        <div class="elk-card"><h3>Infrastructure</h3><p>Verify Docker configuration, services, health and networking.</p></div>
+        <div class="elk-card"><h3>Pipeline</h3><p>Verify the path source → collector → Logstash → Elasticsearch.</p></div>
+        <div class="elk-card"><h3>Detection</h3><p>Run a known scenario and confirm the expected detection and alert.</p></div>
+        <div class="elk-card"><h3>Investigation</h3><p>Confirm alert → search → correlation → timeline produces a coherent story.</p></div>
+      </div>
+
+      <p>The overall flow stays repeatable: start the stack, run health checks, generate normal traffic, run a
+      scenario, confirm the detection in Kibana, investigate, and — when a completely clean lab is required —
+      reset. The repository remains the source of truth for the exact commands.</p>
+
+      <h3>Persistence</h3>
+      <p>Ephemeral containers are separated from persistent Elasticsearch data, so
+      <code>docker compose down</code> then <code>docker compose up</code> restarts the environment without
+      destroying the indexed dataset. A deliberate reset mechanism exists for when a fully clean lab is needed.</p>
+    </section>
+
+    <!-- ================= 18 THREAT MODEL ================= -->
+    <section id="elk-threat" class="elk-sec">
+      <p class="elk-sec-num">18</p>
+      <h2>Threat model</h2>
+
+      <p>The monitoring platform is treated as part of the security boundary rather than something automatically
+      trusted.</p>
+
+      <div class="elk-cards elk-threat">
+        <div class="elk-card">
+          <h3>Assets</h3>
+          <ul>
+            <li>Security telemetry</li>
+            <li>Elasticsearch data</li>
+            <li>Credentials</li>
+            <li>TLS keys</li>
+            <li>Kibana</li>
+            <li>Endpoint logs</li>
+          </ul>
+        </div>
+        <div class="elk-card">
+          <h3>Threats</h3>
+          <ul>
+            <li>Unauthorized access</li>
+            <li>Credential theft</li>
+            <li>Telemetry tampering</li>
+            <li>Data exposure</li>
+            <li>Compromised endpoint</li>
+            <li>Malicious log injection</li>
+            <li>Monitoring infrastructure compromise</li>
+          </ul>
+        </div>
+        <div class="elk-card">
+          <h3>Controls</h3>
+          <ul>
+            <li>Authentication</li>
+            <li>TLS</li>
+            <li>Network isolation</li>
+            <li>Restricted ports</li>
+            <li>Service-specific credentials</li>
+            <li>Secrets management</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 19 LIMITATIONS ================= -->
+    <section id="elk-limits" class="elk-sec">
+      <p class="elk-sec-num">19</p>
+      <h2>Limitations</h2>
+
+      <p>This environment is intentionally a lab rather than a full production SOC.</p>
+
+      <div class="elk-cards">
+        <div class="elk-card"><h3>Single-node Elasticsearch</h3><p>No highly available cluster — this is a single-node deployment.</p></div>
+        <div class="elk-card"><h3>Synthetic telemetry</h3><p>Simulation mode is synthetic and must not be mistaken for genuine enterprise traffic.</p></div>
+        <div class="elk-card"><h3>Simplified detection</h3><p>The engine demonstrates core detection concepts but does not replace a mature SIEM correlation engine.</p></div>
+        <div class="elk-card"><h3>Limited coverage</h3><p>Primary focus on Linux, Windows, Nginx and application telemetry; more sources can be added later.</p></div>
+      </div>
+    </section>
+
+    <!-- ================= 20 FUTURE WORK ================= -->
+    <section id="elk-future" class="elk-sec">
+      <p class="elk-sec-num">20</p>
+      <h2>Future work</h2>
+
+      <p>Several directions extend the project without changing its direction.</p>
+
+      <div class="elk-cards">
+        <div class="elk-card"><h3>Network telemetry</h3><p>Adding Zeek or Suricata to correlate endpoint activity with network activity.</p></div>
+        <div class="elk-card"><h3>Sigma rules</h3><p>Represent detections as Sigma rules and translate them into platform-specific queries.</p></div>
+        <div class="elk-card"><h3>Richer Windows telemetry</h3><p>A real domain controller could provide richer authentication and directory-service events.</p></div>
+        <div class="elk-card"><h3>Advanced correlation</h3><p>Multi-stage detections connecting authentication, endpoint, network and web activity into one incident.</p></div>
+        <div class="elk-card"><h3>Alert notifications</h3><p>Forward alerts to email, Slack, Discord, webhooks or case-management systems.</p></div>
+        <div class="elk-card"><h3>High availability</h3><p>Multiple Elasticsearch nodes, load balancing, replication and a backup strategy.</p></div>
+      </div>
+    </section>
+
+    <!-- ================= 21 LESSONS ================= -->
+    <section id="elk-lessons" class="elk-sec">
+      <p class="elk-sec-num">21</p>
+      <h2>Lessons learned</h2>
+
+      <p>The biggest lesson from this project is that <strong>centralized logging alone does not create a security
+      monitoring platform</strong>. A raw log line is only the beginning.</p>
+
+      <ul>
+        <li><strong>Normalization</strong> makes events comparable.</li>
+        <li><strong>Aggregation</strong> reveals patterns.</li>
+        <li><strong>Detections</strong> highlight suspicious behavior.</li>
+        <li><strong>Correlation</strong> gives context.</li>
+        <li><strong>Investigation</strong> turns those events into an explanation of what actually happened.</li>
+      </ul>
+
+      <p>Reproducibility matters just as much. A security lab should not depend entirely on external
+      infrastructure. Synthetic generators make it possible to repeatedly test detections under controlled
+      conditions, while real endpoint integrations let the same architecture evolve toward realistic deployments.</p>
+    </section>
+
+    <!-- ================= 22 CONCLUSION ================= -->
+    <section id="elk-conclusion" class="elk-sec">
+      <p class="elk-sec-num">22</p>
+      <h2>Conclusion</h2>
+
+      <p>The goal of this project was not simply to deploy Elasticsearch, Logstash and Kibana. It was to build a
+      small environment that demonstrates the complete lifecycle of security telemetry — from generation and
+      collection, through parsing, normalization and enrichment, into indexed storage, and finally into detection
+      and structured investigation.</p>
+
+      <div class="elk-flow" aria-label="Conclusion pipeline">
+        <span>Data</span><i>↓</i>
+        <span>Structure</span><i>↓</i>
+        <span>Context</span><i>↓</i>
+        <span>Detection</span><i>↓</i>
+        <span>Investigation</span>
+      </div>
+
+      <p>The architecture is intentionally flexible. A developer can run everything locally with synthetic data.
+      A security engineer can connect real Linux or Windows endpoints. A hybrid deployment combines both. The
+      result is a reproducible security monitoring environment that brings together systems administration,
+      networking, Docker, log management, the Elastic Stack, security monitoring, detection engineering, threat
+      hunting and incident investigation.</p>
+
+      <p>Collecting logs is only the beginning. The real value comes from transforming telemetry into context,
+      context into detections, and detections into an understanding of what actually happened.</p>
+    </section>
+
+  </div>
+
+  <footer class="wpost-foot">
+    <a class="btn-line" href="https://github.com/cuddest/elk-home-soc" target="_blank" rel="noopener noreferrer">View the source</a>
+    <a class="ulink" href="../index.html#writing">← Back to all writeups</a>
+  </footer>
+</article>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span>Set in Geist &amp; JetBrains Mono</span>
+    <span><a class="ulink" href="../index.html#writing">Back to the site</a></span>
+  </div>
+</footer>
+
+<script src="../js/writeup-elk.js"></script>
+</body>
+</html>
