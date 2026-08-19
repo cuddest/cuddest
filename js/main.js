@@ -371,6 +371,8 @@
     root.addEventListener("click", (e) => {
       if (e.target === root) close();
     });
+    const closeBtn = $("#paletteClose");
+    if (closeBtn) closeBtn.addEventListener("click", close);
     const trigger = $("#searchTrigger");
     if (trigger) trigger.addEventListener("click", open);
     input.addEventListener("input", () => search(input.value));
