@@ -100,39 +100,12 @@ const SKILLS = [
 ------------------------------------------------------------ */
 const PROJECTS = [
   {
-    title: "Example — Home SOC Lab",
+    title: "ELK Home SOC — Security Monitoring Lab",
     blurb:
-      "A full detection stack on spare hardware: Wazuh and Elastic ingesting Sysmon and Suricata, with attacks replayed from an isolated host so every rule is tested against the real thing.",
+      "A containerized security monitoring platform built on the Elastic Stack. Filebeat and Winlogbeat ship Nginx, Flask, SSH and Windows telemetry into Logstash, which normalizes and routes it to per-source indexes in Elasticsearch, where a detection engine turns patterns into alerts for investigation in Kibana. Runs in simulation, real endpoint, and hybrid modes.",
     tags: ["Detection", "Blue"],
-    stack: ["Wazuh", "Elastic", "Suricata", "Sysmon", "Docker"],
-    links: { repo: "#", demo: "" },
-    status: "Ongoing",
-  },
-  {
-    title: "Example — Sigma Rule Pack",
-    blurb:
-      "Detection rules for the techniques I kept exploiting in CTFs, mapped to MITRE ATT&CK and tested for false positives against a week of clean baseline traffic.",
-    tags: ["Detection", "Blue"],
-    stack: ["Sigma", "MITRE ATT&CK", "Python"],
-    links: { repo: "#", demo: "" },
-    status: "Shipped",
-  },
-  {
-    title: "Example — Log Anomaly Detector",
-    blurb:
-      "Parses auth logs and flags brute-force patterns and impossible-travel logins, with a small triage dashboard for analysts.",
-    tags: ["Detection", "Backend"],
-    stack: ["Python", "FastAPI", "Redis"],
-    links: { repo: "#", demo: "" },
-    status: "Shipped",
-  },
-  {
-    title: "Example — Hardened Auth API",
-    blurb:
-      "A REST authentication service built around the failure modes I keep finding in CTFs: rotating refresh tokens, rate limiting, argon2id, and audit logging that an analyst can actually read.",
-    tags: ["Backend"],
-    stack: ["Node.js", "Express", "PostgreSQL", "Docker"],
-    links: { repo: "#", demo: "" },
+    stack: ["Elasticsearch", "Logstash", "Kibana", "Filebeat", "Winlogbeat", "Docker"],
+    links: { repo: "https://github.com/cuddest/elk-home-soc", demo: "" },
     status: "Shipped",
   },
 ];
