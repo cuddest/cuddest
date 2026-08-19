@@ -10,7 +10,7 @@ const PROFILE = {
   role: "Cybersecurity Engineer",
 
   // The large headline in the About section.
-  statement: "In a journey of getting better at defending systems",
+  statement: "",
 
   
   // The spec sheet beside the About text. Add or remove rows freely.
