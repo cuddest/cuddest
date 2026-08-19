@@ -1,2 +1,2 @@
 Fitter, happier, more productive.
-[check my house](https://cuddest.github.io/cuddest)
+[my little corner](https://cuddest.github.io/cuddest)
