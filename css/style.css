@@ -650,7 +650,13 @@ kbd{
     display:flex; flex-wrap:wrap; justify-content:center; gap:6px;
   }
   .logo{ order:-1; flex-basis:100%; justify-content:center; margin-bottom:10px; gap:5px; }
-  .topbar-search{ order:1; }
+  .topbar-search{
+    position:absolute; top:16px; right:18px;
+    order:unset; border:0; padding:8px;
+    opacity:.85; background:rgba(9,13,19,.4);
+    border-radius:var(--radius);
+  }
+  .topbar-search:hover{ background:rgba(9,13,19,.65); }
   .logo-mark{ width:34px; height:34px; }
   .logo-word{ font-size:15px; letter-spacing:.18em; }
   .topsocials a{ width:38px; height:38px; }
