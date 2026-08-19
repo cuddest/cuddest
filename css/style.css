@@ -322,8 +322,8 @@ hr{ border:0; margin:0; }
    Dark on pale is the only combination that stays legible here. */
 .hero{ color:#0a0f16; }
 .hero .hero-quote{ color:#0a0f16; }
-.hero .btn-line{ border-color:#0a0f16; color:#0a0f16; }
-.hero .btn-line:hover{ background:#0a0f16; color:#f2f4f7; border-color:#0a0f16; }
+.hero .btn-line{ border-color:#7a5c24; color:#7a5c24; }
+.hero .btn-line:hover{ background:#7a5c24; color:#f2f4f7; border-color:#7a5c24; }
 .hero .ulink{ color:#0a0f16; border-bottom-color:rgba(10,15,22,.4); }
 .hero .ulink:hover{ color:#7a5c24; border-bottom-color:#7a5c24; }
 .hero .gridbg{ --grid-dot:rgba(10,15,22,.13); }
@@ -511,6 +511,7 @@ kbd{
 
   .toolkit{ grid-template-columns:1fr; gap:28px; }
   .colophon-in{ flex-direction:column; gap:10px; }
+  .colophon-hint{ display:none; }
 
   .palette-close{ display:block; }
   .palette-top kbd{ display:none; }
