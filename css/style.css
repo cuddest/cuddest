@@ -586,7 +586,7 @@ kbd{
 }
 
 /* ---- socials ---- */
-.topbar-side.right{ grid-column:3; justify-self:start; display:flex; align-items:center; gap:clamp(4px,.9vw,12px); }
+.topbar-side.right{ grid-column:3; justify-self:end; display:flex; align-items:center; gap:clamp(4px,.9vw,12px); }
 .topsocials{ display:flex; align-items:center; gap:clamp(4px, .9vw, 12px); }
 .topsocials.left{ grid-column:1; justify-self:end; }
 .topsocials a{
