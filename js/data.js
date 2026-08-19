@@ -225,7 +225,7 @@ const WRITEUPS = [
     event: "Project",
     category: "Articles",
     date: "2026-08-19",
-    readTime: "12 min",
+    readTime: "14 min",
     summary:
       "A reproducible Elastic Stack monitoring platform — Filebeat and Winlogbeat telemetry, Logstash normalization, Elasticsearch indexing, Kibana investigation and a detection engine, running in simulation, real and hybrid modes.",
     url: "writeups/elk-security-monitoring.html",

@@ -27,6 +27,56 @@
 }
 .elk-hero-cta .ulink{ color:var(--ink-2); }
 
+/* ---- project at a glance ---- */
+.elk-glance{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:1px; background:var(--rule-soft);
+  border:1px solid var(--rule-soft); border-radius:var(--radius);
+  margin:30px 0 0; overflow:hidden;
+}
+.elk-glance-item{
+  background:var(--paper-2); padding:12px 16px;
+  display:flex; flex-direction:column; gap:4px;
+}
+.elk-glance-item span{
+  font-family:var(--mono); font-size:9.5px; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--ink-3);
+}
+.elk-glance-item b{
+  font-weight:500; font-size:.9rem; color:var(--ink);
+}
+
+/* ---- thesis callout ---- */
+.elk-callout{
+  border:1px solid var(--rule); background:var(--paper-2);
+  border-radius:var(--radius); padding:22px; margin:26px 0;
+}
+.elk-callout-title{
+  font-family:var(--mono); font-size:1.02rem; letter-spacing:var(--track-tight);
+  color:var(--accent); margin:0 0 18px;
+}
+.elk-callout-diagram{
+  display:flex; flex-direction:column; align-items:center; gap:8px;
+}
+.elk-callout-src{
+  display:flex; flex-wrap:wrap; justify-content:center; gap:8px;
+}
+.elk-callout-src span, .elk-callout-backend span{
+  font-family:var(--mono); font-size:.8rem; color:var(--ink-2);
+  border:1px solid var(--rule-soft); background:var(--paper-3);
+  border-radius:var(--radius); padding:8px 13px;
+}
+.elk-callout-backend{
+  display:flex; flex-wrap:wrap; justify-content:center; gap:8px;
+}
+.elk-callout-backend span{
+  color:var(--accent); border-color:var(--rule);
+}
+.elk-callout .elk-edge{ margin:2px 0; }
+.elk-callout-note{
+  margin:18px 0 0; font-size:.92rem; color:var(--ink-2); line-height:1.62;
+}
+
 /* ---- contents ---- */
 .elk-toc{
   margin:38px 0 0; padding-top:22px;
@@ -112,6 +162,9 @@
 .elk-badge.synth{ color:var(--ink-3); border:1px solid var(--rule); }
 .elk-badge.ext{ color:var(--accent); border:1px solid var(--rule); }
 
+/* ---- why-this-architecture cards ---- */
+.elk-why .elk-card h3{ color:var(--accent); }
+
 /* ---- architecture diagram ---- */
 .elk-diagram{
   border:1px solid var(--rule-soft); background:var(--paper-2);
@@ -162,6 +215,13 @@
   padding:22px;
 }
 .elk-mode-panel p{ margin:18px 0 0; font-size:.92rem; color:var(--ink-2); }
+.elk-mode-label{
+  margin:0 0 14px; padding:10px 14px;
+  font-family:var(--mono); font-size:.82rem; color:var(--ink-2);
+  background:var(--paper-3); border:1px solid var(--rule-soft);
+  border-radius:var(--radius);
+}
+.elk-mode-label::before{ content:'MODE'; color:var(--accent); font-size:9px; letter-spacing:.08em; margin-right:10px; }
 .elk-mode-diagram{
   display:flex; flex-direction:column; gap:0;
 }
@@ -206,6 +266,45 @@
   padding:8px 10px; background:var(--paper-3);
 }
 .elk-fields b{ color:var(--accent); font-weight:500; display:block; margin-bottom:3px; }
+
+/* ---- raw → normalized layout ---- */
+.elk-tf-flow{
+  display:flex; align-items:center; flex-wrap:wrap; gap:10px;
+  margin:0 0 18px; font-family:var(--mono); font-size:.72rem;
+  letter-spacing:.06em; color:var(--ink-3);
+}
+.elk-tf-flow span{
+  border:1px solid var(--rule-soft); background:var(--paper-3);
+  border-radius:var(--radius); padding:6px 11px;
+}
+.elk-tf-flow i{ font-style:normal; color:var(--accent); }
+.elk-tf-row{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:14px; align-items:start;
+}
+
+/* ---- evidence blocks ---- */
+.elk-evidence{
+  border:1px solid var(--rule-soft); background:var(--paper-2);
+  border-radius:var(--radius); padding:16px 18px 18px;
+  margin:26px 0;
+}
+.elk-evidence figcaption{
+  font-family:var(--mono); font-size:.78rem; color:var(--ink-3);
+  letter-spacing:.03em; margin-bottom:12px;
+}
+.elk-evidence figcaption code{ background:none; padding:0; color:var(--accent); }
+.elk-evidence pre{
+  margin:0; padding:12px 14px;
+  background:var(--paper-3); border:1px solid var(--rule-soft);
+  border-radius:var(--radius); font-family:var(--mono);
+  font-size:.8rem; line-height:1.55; color:var(--ink-2);
+  overflow-x:auto; white-space:pre;
+}
+.elk-evidence pre code{ background:none; padding:0; }
+.elk-evidence-note{
+  margin:0; font-size:.9rem; color:var(--ink-2); line-height:1.62;
+}
 
 /* ---- queries ---- */
 .elk-queries{ display:flex; flex-direction:column; gap:8px; margin:20px 0; }
@@ -280,6 +379,50 @@
 }
 .elk-ba-card.after li{ color:var(--sage); }
 .elk-ba-card li:last-child{ border-bottom:0; }
+
+/* ---- dev → hardened ---- */
+.elk-dev-hard{
+  display:grid; grid-template-columns:1fr auto 1fr;
+  gap:14px; align-items:center; margin:26px 0;
+}
+.elk-dev-hard .elk-ba-card{ height:100%; }
+.elk-arrow{
+  font-family:var(--mono); color:var(--accent);
+  text-align:center; font-size:1.1rem;
+}
+@media (max-width:760px){
+  .elk-dev-hard{ grid-template-columns:1fr; }
+  .elk-arrow{ transform:rotate(90deg); }
+}
+
+/* ---- investigation steps ---- */
+.elk-invest-steps{
+  margin:24px 0; padding:0; list-style:none;
+  counter-reset:invest;
+}
+.elk-invest-steps li{
+  position:relative; padding:0 0 16px 44px;
+  font-size:.95rem; color:var(--ink-2); line-height:1.62;
+  border-bottom:1px solid var(--rule-soft);
+}
+.elk-invest-steps li:last-child{ border-bottom:0; padding-bottom:0; }
+.elk-invest-steps li::before{
+  counter-increment:invest; content:counter(invest);
+  position:absolute; left:0; top:1px;
+  width:26px; height:26px; line-height:24px; text-align:center;
+  font-family:var(--mono); font-size:.78rem; color:var(--accent);
+  border:1px solid var(--rule); border-radius:var(--radius);
+}
+.elk-invest-steps b{ color:var(--ink); font-weight:500; }
+
+/* ---- future work ---- */
+.elk-next{ list-style:none; margin:24px 0; padding:0; }
+.elk-next li{
+  font-family:var(--mono); font-size:.9rem; color:var(--ink-2);
+  padding:10px 0; border-bottom:1px solid var(--rule-soft);
+}
+.elk-next li::first-letter{ color:var(--accent); }
+.elk-next li:last-child{ border-bottom:0; }
 
 /* ---- threat model ---- */
 .elk-threat .elk-card h3{ color:var(--accent); }
