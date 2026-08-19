@@ -47,8 +47,8 @@ const PROFILE = {
     cyberdefenders: "https://cyberdefenders.org/p/cuddest/",
     tryhackme: "https://tryhackme.com/p/cuddest",
     ctftime: "https://ctftime.org/user/219769",
-    discord: "https://discord.com/users/[659743566654078986]",
-    instagram: "cudddest",
+    discord: "https://discord.com/users/659743566654078986",
+    instagram: "https://www.instagram.com/cudddest/",
   },
 
   // Wrap anything in [[double brackets]] to render it as a redaction bar
