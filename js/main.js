@@ -101,8 +101,7 @@
       )
       .join("");
 
-    $("#footerLeft").textContent = `© ${new Date().getFullYear()} ${PROFILE.name}`;
-  }
+    }
 
   /* The page's sections, in order. Used by the contents list and search. */
   const SECTIONS = [
@@ -370,6 +369,8 @@
     root.addEventListener("click", (e) => {
       if (e.target === root) close();
     });
+    const trigger = $("#searchTrigger");
+    if (trigger) trigger.addEventListener("click", open);
     input.addEventListener("input", () => search(input.value));
 
     input.addEventListener("keydown", (e) => {

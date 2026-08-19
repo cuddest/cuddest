@@ -586,9 +586,9 @@ kbd{
 }
 
 /* ---- socials ---- */
+.topbar-side.right{ grid-column:3; justify-self:start; display:flex; align-items:center; gap:clamp(4px,.9vw,12px); }
 .topsocials{ display:flex; align-items:center; gap:clamp(4px, .9vw, 12px); }
 .topsocials.left{ grid-column:1; justify-self:end; }
-.topsocials.right{ grid-column:3; justify-self:start; }
 .topsocials a{
   display:grid; place-items:center;
   width:44px; height:44px; border-radius:var(--radius);
@@ -597,6 +597,19 @@ kbd{
 }
 .topsocials a:hover{ opacity:1; color:var(--logo-accent); transform:translateY(-2px); }
 .topsocials svg{ width:24px; height:24px; }
+
+/* ---- search trigger ---- */
+.topbar-search{
+  display:inline-flex; align-items:center; gap:8px;
+  padding:9px 13px; border:1px solid var(--rule);
+  border-radius:var(--radius); background:transparent;
+  color:inherit; font-family:var(--mono); font-size:12px;
+  letter-spacing:.06em; text-transform:uppercase;
+  cursor:pointer; opacity:.75;
+  transition:opacity .16s, color .16s, transform .16s;
+}
+.topbar-search:hover{ opacity:1; color:var(--logo-accent); transform:translateY(-2px); }
+.topbar-search svg{ width:15px; height:15px; flex:none; }
 
 @media (max-width:700px){
   /* on phones the bar stacks: logo above, icons centred beneath */
