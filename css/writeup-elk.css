@@ -9,7 +9,7 @@
 /* ---- hero ---- */
 .elk-hero-desc{
   margin:20px 0 0; max-width:68ch;
-  color:var(--ink-2); font-size:1.02rem; line-height:1.65;
+  color:var(--ink-2); font-size:1.08rem; line-height:1.65;
 }
 .elk-stack{
   display:flex; flex-wrap:wrap; gap:8px;
@@ -43,7 +43,7 @@
   text-transform:uppercase; color:var(--ink-3);
 }
 .elk-glance-item b{
-  font-weight:500; font-size:.9rem; color:var(--ink);
+  font-weight:500; font-size:.95rem; color:var(--ink);
 }
 
 /* ---- thesis callout ---- */
@@ -74,7 +74,7 @@
 }
 .elk-callout .elk-edge{ margin:2px 0; }
 .elk-callout-note{
-  margin:18px 0 0; font-size:.92rem; color:var(--ink-2); line-height:1.62;
+  margin:18px 0 0; font-size:1rem; color:var(--ink-2); line-height:1.62;
 }
 
 /* ---- contents ---- */
@@ -107,7 +107,7 @@
 }
 .elk-sec h3{
   font-family:var(--mono); color:var(--accent);
-  font-size:1.05rem; letter-spacing:var(--track-tight);
+  font-size:1.12rem; letter-spacing:var(--track-tight);
   margin:34px 0 12px;
 }
 .elk-body p:first-child{ color:var(--ink); }
@@ -124,7 +124,7 @@
   margin:26px 0; max-width:430px;
 }
 .elk-flow span{
-  font-family:var(--mono); font-size:.85rem; color:var(--ink-2);
+  font-family:var(--mono); font-size:.9rem; color:var(--ink-2);
   border:1px solid var(--rule-soft); background:var(--paper-3);
   border-radius:var(--radius); padding:10px 14px;
 }
@@ -143,8 +143,8 @@
   border:1px solid var(--rule-soft); background:var(--paper-2);
   border-radius:var(--radius); padding:18px 18px 20px;
 }
-.elk-card h3{ margin:0 0 10px; font-size:.98rem; color:var(--ink); font-weight:500; }
-.elk-card p{ margin:0; font-size:.92rem; color:var(--ink-2); line-height:1.62; }
+.elk-card h3{ margin:0 0 10px; font-size:1.05rem; color:var(--ink); font-weight:500; }
+.elk-card p{ margin:0; font-size:1rem; color:var(--ink-2); line-height:1.62; }
 .elk-card ul{ list-style:none; margin:0; }
 .elk-card li{
   font-family:var(--mono); font-size:.78rem; color:var(--ink-2);
@@ -175,7 +175,7 @@
 .elk-col{ display:flex; flex-direction:column; gap:8px; }
 .elk-edge{ text-align:center; color:var(--accent); font-family:var(--mono); margin:10px 0; }
 .elk-node{
-  font-family:var(--mono); font-size:.85rem; color:var(--ink-2);
+  font-family:var(--mono); font-size:.9rem; color:var(--ink-2);
   background:var(--paper-3); border:1px solid var(--rule-soft);
   border-radius:var(--radius); padding:12px 18px;
   cursor:pointer; transition:border-color .15s, color .15s, background .15s;
@@ -192,7 +192,7 @@
   min-height:64px;
 }
 .elk-nodeinfo .kicker{ margin:0 0 6px; }
-.elk-nodeinfo p{ margin:0; font-size:.9rem; color:var(--ink-2); }
+.elk-nodeinfo p{ margin:0; font-size:.95rem; color:var(--ink-2); }
 
 /* ---- modes ---- */
 .elk-mode-tabs{
@@ -214,7 +214,7 @@
   background:var(--paper-2); border-radius:0 0 var(--radius) var(--radius);
   padding:22px;
 }
-.elk-mode-panel p{ margin:18px 0 0; font-size:.92rem; color:var(--ink-2); }
+.elk-mode-panel p{ margin:18px 0 0; font-size:1rem; color:var(--ink-2); }
 .elk-mode-label{
   margin:0 0 14px; padding:10px 14px;
   font-family:var(--mono); font-size:.82rem; color:var(--ink-2);
@@ -245,7 +245,7 @@
 .elk-stageinfo{
   border-left:2px solid var(--accent); background:rgba(201,165,108,.06);
   padding:14px 18px; margin-bottom:10px;
-  font-size:.92rem; color:var(--ink-2);
+  font-size:1rem; color:var(--ink-2);
 }
 
 /* ---- raw → normalized ---- */
@@ -303,7 +303,7 @@
 }
 .elk-evidence pre code{ background:none; padding:0; }
 .elk-evidence-note{
-  margin:0; font-size:.9rem; color:var(--ink-2); line-height:1.62;
+  margin:0; font-size:.95rem; color:var(--ink-2); line-height:1.62;
 }
 
 /* ---- queries ---- */
@@ -325,7 +325,7 @@
 }
 .elk-detection summary{
   cursor:pointer; list-style:none; padding:14px 18px;
-  font-family:var(--mono); font-size:.9rem; color:var(--ink);
+  font-family:var(--mono); font-size:.95rem; color:var(--ink);
   display:flex; justify-content:space-between; align-items:center;
   gap:14px; transition:color .15s;
 }
@@ -337,7 +337,7 @@
   border-top:1px solid var(--rule-soft);
   padding:4px 18px 14px;
 }
-.elk-det-body p{ margin:12px 0 0; font-size:.92rem; color:var(--ink-2); }
+.elk-det-body p{ margin:12px 0 0; font-size:1rem; color:var(--ink-2); }
 .elk-det-body b{ color:var(--ink); font-weight:500; }
 
 /* ---- timeline ---- */
@@ -357,7 +357,7 @@
 .elk-ev-detail{
   border-left:2px solid var(--accent); background:rgba(201,165,108,.06);
   padding:12px 16px; margin:0 0 2px;
-  font-size:.9rem; color:var(--ink-2);
+  font-size:.95rem; color:var(--ink-2);
 }
 
 /* ---- before / after ---- */
@@ -402,7 +402,7 @@
 }
 .elk-invest-steps li{
   position:relative; padding:0 0 16px 44px;
-  font-size:.95rem; color:var(--ink-2); line-height:1.62;
+  font-size:1.02rem; color:var(--ink-2); line-height:1.62;
   border-bottom:1px solid var(--rule-soft);
 }
 .elk-invest-steps li:last-child{ border-bottom:0; padding-bottom:0; }
@@ -418,7 +418,7 @@
 /* ---- future work ---- */
 .elk-next{ list-style:none; margin:24px 0; padding:0; }
 .elk-next li{
-  font-family:var(--mono); font-size:.9rem; color:var(--ink-2);
+  font-family:var(--mono); font-size:.95rem; color:var(--ink-2);
   padding:10px 0; border-bottom:1px solid var(--rule-soft);
 }
 .elk-next li::first-letter{ color:var(--accent); }
@@ -429,13 +429,24 @@
 
 /* ---- responsive ---- */
 @media (max-width:760px){
-  .elk-node{ padding:10px 12px; font-size:.78rem; }
+  .elk-node{ padding:10px 12px; font-size:.82rem; }
   .elk-node.elk-wide{ padding:12px 16px; }
   .elk-toc{ grid-template-columns:1fr 1fr; }
+  .elk-card p{ font-size:.95rem; }
+  .elk-mode-panel p{ font-size:.95rem; }
+  .elk-det-body p{ font-size:.95rem; }
+  .elk-sec h3{ font-size:1.05rem; }
+  .elk-invest-steps li{ font-size:.95rem; }
+  .elk-evidence pre{ font-size:.78rem; }
 }
 @media (max-width:520px){
   .elk-toc{ grid-template-columns:1fr; }
   .elk-mode-tab{ padding:10px 10px; font-size:10px; }
   .elk-query{ flex-direction:column; gap:4px; }
   .elk-query span{ text-align:left; }
+  .elk-flow span{ font-size:.82rem; }
+  .elk-nodeinfo{ padding:12px 14px; }
+  .elk-card{ padding:14px; }
+  .elk-card h3{ font-size:.98rem; }
+  .elk-fields span{ font-size:.82rem; padding:6px 8px; }
 }

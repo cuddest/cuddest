@@ -25,7 +25,7 @@
 /* ---- body ---- */
 .wpost-body{
   color:var(--ink-2);
-  font-size:1rem; line-height:1.75;
+  font-size:1.06rem; line-height:1.75;
 }
 .wpost-body > *:first-child{ margin-top:0; }
 .wpost-body p{ margin:0 0 22px; max-width:70ch; }
@@ -35,9 +35,9 @@
   color:var(--ink); font-weight:500; letter-spacing:var(--track-tight);
   margin:44px 0 14px; line-height:1.2;
 }
-.wpost-body h2{ font-family:var(--mono); font-size:1.35rem; }
-.wpost-body h3{ font-size:1.15rem; color:var(--accent); font-family:var(--mono); }
-.wpost-body h4{ font-size:1rem; }
+.wpost-body h2{ font-family:var(--mono); font-size:1.45rem; }
+.wpost-body h3{ font-size:1.22rem; color:var(--accent); font-family:var(--mono); }
+.wpost-body h4{ font-size:1.08rem; }
 
 .wpost-body strong{ color:var(--ink); font-weight:500; }
 
@@ -51,7 +51,7 @@
 
 /* inline + fenced code */
 .wpost-body code{
-  font-family:var(--mono); font-size:.85em;
+  font-family:var(--mono); font-size:.9em;
   background:var(--paper-3); color:var(--ink);
   padding:2px 6px; border-radius:var(--radius);
 }
@@ -59,13 +59,14 @@
   margin:0 0 24px; padding:16px 18px;
   background:var(--paper-3); border:1px solid var(--rule-soft);
   border-radius:var(--radius); overflow-x:auto;
+  font-size:.88rem; line-height:1.6;
 }
 .wpost-body pre code{ background:none; padding:0; color:var(--ink-2); line-height:1.6; }
 
 /* tables */
 .wpost-body table{
   width:100%; margin:0 0 26px; border-collapse:collapse;
-  font-family:var(--mono); font-size:.8rem; line-height:1.5;
+  font-family:var(--mono); font-size:.85rem; line-height:1.5;
 }
 .wpost-body th,.wpost-body td{
   border:1px solid var(--rule-soft); padding:8px 12px;
@@ -87,7 +88,7 @@
   margin:22px 0 30px; padding:14px 18px;
   border-left:2px solid var(--accent);
   background:rgba(201,165,108,.06);
-  font-family:var(--mono); font-size:.9rem; color:var(--ink);
+  font-family:var(--mono); font-size:.95rem; color:var(--ink);
 }
 .wpost-body .answer code{ background:var(--paper); }
 
@@ -110,6 +111,13 @@
 .wpost-foot .btn-line{ font-family:var(--mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; }
 
 @media (max-width:760px){
-  .wpost{ padding:0 22px; margin-top:40px; }
+  .wpost{ padding:0 20px; margin-top:36px; }
+  .wpost-head{ margin-bottom:32px; }
+  .wpost h1{ font-size:clamp(1.4rem, 6vw, 1.9rem); }
+  .wpost-body{ font-size:1rem; }
+  .wpost-body h2{ font-size:1.3rem; }
+  .wpost-body h3{ font-size:1.1rem; }
+  .wpost-body pre{ font-size:.82rem; padding:14px 14px; }
   .wpost-body table{ display:block; overflow-x:auto; }
+  .wpost-body td,.wpost-body th{ padding:6px 8px; font-size:.8rem; }
 }
