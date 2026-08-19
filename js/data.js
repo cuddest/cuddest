@@ -105,7 +105,7 @@ const PROJECTS = [
       "A containerized security monitoring platform built on the Elastic Stack. Filebeat and Winlogbeat ship Nginx, Flask, SSH and Windows telemetry into Logstash, which normalizes and routes it to per-source indexes in Elasticsearch, where a detection engine turns patterns into alerts for investigation in Kibana. Runs in simulation, real endpoint, and hybrid modes.",
     tags: ["Detection", "Blue"],
     stack: ["Elasticsearch", "Logstash", "Kibana", "Filebeat", "Winlogbeat", "Docker"],
-    links: { repo: "https://github.com/cuddest/elk-home-soc", demo: "" },
+    links: { repo: "https://github.com/cuddest/elk-home-soc", demo: "", article: "writeups/elk-security-monitoring.html" },
     status: "Shipped",
   },
   {

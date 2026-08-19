@@ -134,6 +134,8 @@
         links.push(`<a href="${esc(p.links.repo)}"${ext(p.links.repo)}>Source</a>`);
       if (p.links && p.links.demo)
         links.push(`<a href="${esc(p.links.demo)}"${ext(p.links.demo)}>Live</a>`);
+      if (p.links && p.links.article)
+        links.push(`<a href="${esc(p.links.article)}">Article</a>`);
 
       const live = /shipped|live|complete/i.test(p.status || "");
 
