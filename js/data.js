@@ -108,6 +108,15 @@ const PROJECTS = [
     links: { repo: "https://github.com/cuddest/elk-home-soc", demo: "" },
     status: "Shipped",
   },
+  {
+    title: "Hybrid Attack Demo — Hashcat",
+    blurb:
+      "A pedagogical demo of password recovery with Hashcat: MD5 hashes that survive a pure dictionary attack (-a 0) fall within seconds to a hybrid attack (-a 6, wordlist + mask). A single script runs the whole scenario and shows why human-chosen passwords fail against hybrid rules.",
+    tags: ["Password Security", "Offensive"],
+    stack: ["Hashcat", "Bash", "MD5", "Linux"],
+    links: { repo: "https://github.com/cuddest/Hybrid-Attack-Demo", demo: "" },
+    status: "Shipped",
+  },
 ];
 
 /* ------------------------------------------------------------
