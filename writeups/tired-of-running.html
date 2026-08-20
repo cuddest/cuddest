@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tired of Running — AFRICC CTF — cuddest</title>
+<meta name="description" content="Length truncation, SQL injection, YARA oracle, and HTTP request smuggling chained together.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/writeups.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="logo" href="../index.html#writing" aria-label="cuddest — back to writeups">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+    <span class="topbar-cta"><a class="ulink" href="../index.html#writing">← All writeups</a></span>
+  </div>
+</header>
+
+<article class="wpost">
+  <header class="wpost-head">
+    <p class="wpost-meta"><span>AFRICC 2026</span><span>20 min read</span></p>
+    <h1>Tired of Running</h1>
+  </header>
+  <div class="wpost-body">
+
+<p>This one turned into a chain of several small bugs that only became useful when combined.</p>
+
+<h2>Recon</h2>
+
+<p>The site had a login page that asked only for a <strong>System Handle</strong>. There was no password. After logging in, the main feature was a search box that accepted a file path and returned file information.</p>
+
+<p>The source archive, <code>Player.zip</code>, explained the application architecture. One Go application exposed three servers:</p>
+
+<pre><code>8000  public pages
+5000  internal /query and /upload
+5002  /verify</code></pre>
+
+<p>There was also a second container called <code>flagserver</code> on an internal-only network. The credential lived in <code>/opt/vault/credentials.dat</code> with permissions <code>0400</code> owned by root.</p>
+
+<h2>Bug 1: The Length Field Wraps</h2>
+
+<p>The first bug was in the protocol used by the frontend to communicate with the internal query endpoint. The input length was encoded as <code>uint16</code>, which can only represent values from 0 to 65535.</p>
+
+<p>If I supplied <code>65536 + N</code> bytes, the encoded length wrapped around and became simply <code>N</code>. That meant I could control how the backend split the remaining stream and smuggle attacker-controlled values into the column and table fields.</p>
+
+<h2>Bug 2: Free Login Plus SQL Injection</h2>
+
+<p>The backend eventually constructed a query like:</p>
+
+<pre><code>SELECT * FROM %s WHERE %s='%s';</code></pre>
+
+<p>There was a filter for single quotes, but it applied only to the value. The column and table names were assumed to be trusted. Because Bug 1 let me control those fields, I could inject SQL through them.</p>
+
+<p>For the login step I used a column expression equivalent to <code>1=1--</code>, which transformed the query into a condition that matched everything.</p>
+
+<h2>Bug 3: Reading the Root Credential With YARA</h2>
+
+<p>The YARA execution was running as root, so I could use a rule to test whether a particular character appeared at a specific offset in the protected file. For every character position I submitted 16 rules, one for each possible hexadecimal character. After 64 positions I had recovered the full credential.</p>
+
+<h2>Bug 4: Turning GET Into POST</h2>
+
+<p>The flag server required a POST request containing the credential. The <code>curl</code> functionality only performed GET requests. The <code>user_agent</code> field was a real input and libcurl copied it directly into the HTTP headers, so I could inject CRLF characters and break the generated request into two requests on the same connection.</p>
+
+<pre><code>osq\r\n
+Host: flagserver:5001\r\n
+\r\n
+POST / HTTP/1.1\r\n
+Host: flagserver:5001\r\n
+Content-Length: 64\r\n
+\r\n
+&lt;credential&gt;</code></pre>
+
+<p>The flag server accepted the credential, generated the temporary claim path, and I could finally use the normal GET path to retrieve the flag.</p>
+
+<h2>Flag</h2>
+
+<div class="answer">africc{wh4t_4_gr34t_marathon}</div>
+
+<h2>Full Chain</h2>
+
+<pre><code>Length truncation
+        ↓
+Control internal query fields
+        ↓
+SQL injection → Authentication bypass
+        ↓
+Query internal data sources
+        ↓
+YARA as a file-content oracle
+        ↓
+Recover root-only credential
+        ↓
+CRLF injection in User-Agent
+        ↓
+HTTP request smuggling
+        ↓
+Forced POST to internal flag server
+        ↓
+GET temporary claim path → Flag</code></pre>
+
+<p>The interesting part was how little any individual bug achieved on its own. It was basically four small mistakes that were designed to fit together.</p>
+
+  </div>
+  <footer class="wpost-foot">
+    <a class="btn-line" href="../index.html#writing">← Back to all writeups</a>
+  </footer>
+</article>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span>Set in Geist &amp; JetBrains Mono</span>
+    <span><a class="ulink" href="../index.html#writing">Back to the site</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

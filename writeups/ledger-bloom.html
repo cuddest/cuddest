@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ledger Bloom — AFRICC CTF — cuddest</title>
+<meta name="description" content="Flask session jail bypass via Python 2 encoding declaration and frame escape.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/writeups.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="logo" href="../index.html#writing" aria-label="cuddest — back to writeups">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+    <span class="topbar-cta"><a class="ulink" href="../index.html#writing">← All writeups</a></span>
+  </div>
+</header>
+
+<article class="wpost">
+  <header class="wpost-head">
+    <p class="wpost-meta"><span>AFRICC 2026</span><span>20 min read</span></p>
+    <h1>Ledger Bloom</h1>
+  </header>
+  <div class="wpost-body">
+
+<p>This challenge looked simple at first. The page had some flavor text and one number called <code>Current Yield</code>. There were no forms, no obvious parameters, and almost nothing to click.</p>
+
+<p>Then I noticed three notes in the sidebar:</p>
+
+<pre><code>Ephemeral computation seed loaded into memory for every fresh session
+Character filtering remains intentionally narrow to preserve compatibility
+Long recipes are discarded by the allocator when the byte budget is exceeded</code></pre>
+
+<p>And at the bottom:</p>
+
+<pre><code>Source visibility remains available through the existing diagnostic route.</code></pre>
+
+<p>That was enough to make me start looking for source disclosure and some kind of constrained expression evaluator.</p>
+
+<h2>First Look at the Application</h2>
+
+<p>The response headers included a Flask session cookie. The middle section was just base64, so I decoded it:</p>
+
+<pre><code>{
+  "ingredient": {
+    " b": "dXh4endkZmhsZg=="
+  },
+  "measurements": {
+    " b": "NTUrMjk="
+  }
+}</code></pre>
+
+<p>The decoded values were:</p>
+
+<pre><code>ingredient = uxxzwdfhlf
+measurements = 55+29</code></pre>
+
+<p>The page showed the result of <code>55+29</code>, so the next question was obvious: what happens between those two session values and the result shown in the browser? It turned out the server was constructing code from them.</p>
+
+<p>One detail I noted and then ignored for far too long was the <code>{ " b": ... }</code> wrapper. That is Flask's tagged representation for <strong>bytes</strong>, not an ordinary string. That detail later became the key to the entire solve.</p>
+
+<h2>Finding the Source</h2>
+
+<p>The challenge explicitly mentioned a diagnostic route, so I tried the usual guesses:</p>
+
+<pre><code>/source
+/src
+/debug</code></pre>
+
+<p><code>/debug</code> returned the source. The relevant code was:</p>
+
+<pre><code>def calc(recipe):
+    global garage
+    builtins, garage = {"__builtins__": None}, {}
+    try:
+        exec(recipe, builtins, garage)
+    except Exception:
+        pass</code></pre>
+
+<p>And later:</p>
+
+<pre><code>recipe = "%s = %s" % (ingredient, measurements)</code></pre>
+
+<p>followed by a very small blacklist:</p>
+
+<pre><code>[ , ( , _ , .</code></pre>
+
+<p>The application was effectively implementing a small Python jail around <code>exec</code>.</p>
+
+<h2>Mapping the Jail</h2>
+
+<p>There were five important constraints.</p>
+
+<h3>1. Hardcoded Flask secret fallback</h3>
+<p>If <code>SECRET_KEY</code> was not configured, the application used a hardcoded fallback key. That meant I could potentially sign my own Flask session cookie and control both values that make up the expression.</p>
+
+<h3>2. Byte budget</h3>
+<p>The generated recipe had to be at least 20 characters long, and anything longer than 300 characters was rejected.</p>
+
+<h3>3. Four banned characters</h3>
+<pre><code>[
+(
+_
+.</code></pre>
+
+<h3>4. Empty builtins</h3>
+<p>The code executed with <code>{"__builtins__": None}</code> so normal builtins such as <code>print</code>, <code>open</code>, <code>__import__</code> were unavailable.</p>
+
+<h3>5. The execution path was blind</h3>
+<p>The branch that executed my recipe returned a normal template without exposing the value produced by <code>exec</code>.</p>
+
+<h2>Confirming the Secret Key</h2>
+
+<p>I reproduced Flask's cookie serializer using the fallback key and confirmed the key by sending an intentionally blocked value — the blacklist itself became an oracle.</p>
+
+<h2>Getting Feedback From a Blind Jail</h2>
+
+<p>Because successful execution produced no output, I built a timing oracle:</p>
+
+<pre><code>zzzzzzzzzz = 1234567890   → 0.21s
+zzzzzzzzzz = 9**9**7      → 1.59s</code></pre>
+
+<p>The second request was clearly slower, which proved code execution.</p>
+
+<h2>The Real Environment: Python 2</h2>
+
+<p>Once I had a foothold, I checked the runtime environment: <code>PYTHON_VERSION=2.7.18</code>. The container was launching the application with Python 2.7.</p>
+
+<p>In Python 2:</p>
+<ul>
+<li><code>str</code> is bytes</li>
+<li>the <code>%s = %s</code> operation therefore produces a byte string</li>
+<li><code>exec</code> on a byte string honors the encoding declaration at the beginning of the source</li>
+</ul>
+
+<p>The code looked like Python 3 code, but the interpreter running it was Python 2. That was the branch that should not have existed.</p>
+
+<h2>Bypassing the Character Filter With an Encoding Declaration</h2>
+
+<p>Because the blacklist only inspected the raw bytes, I could encode forbidden characters so they were not physically present in the payload. The trick was to start the byte-string source with:</p>
+
+<pre><code>#coding:unicode-escape</code></pre>
+
+<p>Then a byte sequence such as <code>\x28</code> would be decoded by the compiler into <code>(</code> before the Python parser tokenized the source. The blacklist saw <code>\ x 2 8</code> while the compiler saw <code>(</code>.</p>
+
+<h2>Reaching the Application's Real Globals</h2>
+
+<p>A generator expression gives access to its own frame through <code>gi_frame</code>, and the frame chain eventually reaches the caller's globals:</p>
+
+<pre><code>global g
+g=(g.gi_frame.f_back.f_back.f_globals for i in "1")
+for G in g:
+    pass
+G["session"]["z"]=G["os"].popen("id").read()</code></pre>
+
+<p>That transformed the blind jail into a readable command-execution primitive. The returned session cookie contained:</p>
+
+<pre><code>uid=1337(ctf) gid=1337(ctf) groups=1337(ctf)
+/app</code></pre>
+
+<h2>Flag</h2>
+
+<div class="answer">africc{l3dg3r_bl00m5_wh3n_th3_1nt3rn3t_g035_1nt3rd1m3n510n4l_debbda84437af9267b56006ffab6b077}</div>
+
+<h2>Full Chain</h2>
+
+<pre><code>Flask session manipulation
+        ↓
+Hardcoded SECRET_KEY fallback
+        ↓
+Python eval/exec primitive
+        ↓
+Blind execution → Timing oracle
+        ↓
+Python 2 byte-string behavior
+        ↓
+PEP 263 encoding bypass
+        ↓
+Frame/global namespace escape
+        ↓
+Session-based output channel
+        ↓
+Command execution → Flag</code></pre>
+
+<p>The most interesting part was that the final bypass had very little to do with the obvious blacklist. The real bug was the mismatch between what the code looked like it expected to run and what interpreter was actually running it.</p>
+
+  </div>
+  <footer class="wpost-foot">
+    <a class="btn-line" href="../index.html#writing">← Back to all writeups</a>
+  </footer>
+</article>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span>Set in Geist &amp; JetBrains Mono</span>
+    <span><a class="ulink" href="../index.html#writing">Back to the site</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

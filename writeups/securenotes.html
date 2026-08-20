@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SecureNotes — AFRICC CTF — cuddest</title>
+<meta name="description" content="Prototype pollution to EJS outputFunctionName RCE.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/writeups.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="logo" href="../index.html#writing" aria-label="cuddest — back to writeups">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+    <span class="topbar-cta"><a class="ulink" href="../index.html#writing">← All writeups</a></span>
+  </div>
+</header>
+
+<article class="wpost">
+  <header class="wpost-head">
+    <p class="wpost-meta"><span>AFRICC 2026</span><span>8 min read</span></p>
+    <h1>SecureNotes</h1>
+  </header>
+  <div class="wpost-body">
+
+<p>The challenge description was already pointing in the right direction. The riddle talked about titles, inherited templates, and "his own voice will betray him". That sounded like template injection at first, but the inheritance wording made me suspect a prototype pollution chain behind it.</p>
+
+<h2>First Attempts</h2>
+
+<p>The application was an Express site with a notes form and an <code>/admin</code> page that returned <code>403</code>.</p>
+
+<p>Three details mattered:</p>
+
+<ol>
+<li>The admin check was simply <code>req.cookies.admin === 'true'</code></li>
+<li>The application used a custom query parser that walked dotted keys — <code>__proto__.x=y</code> could reach <code>Object.prototype</code></li>
+<li>EJS was pinned to <code>3.1.6</code>, which still used <code>outputFunctionName</code> during compilation and inserted it directly into the generated function</li>
+</ol>
+
+<p>Templates were not cached, so every render recompiled them and picked up the polluted value.</p>
+
+<h2>Why JSON Was a Dead End</h2>
+
+<p>My initial tests used JSON because <code>__proto__</code> is the obvious starting point. That did not work because <code>JSON.parse</code> does not mutate <code>Object.prototype</code>. The vulnerable path was the <strong>query parser</strong> instead.</p>
+
+<h2>The Prototype Pollution Chain</h2>
+
+<p>The payload polluted the inherited <code>outputFunctionName</code> property. The chain was:</p>
+
+<pre><code>URL query parameter
+        ↓
+Custom parser
+        ↓
+Object.prototype pollution
+        ↓
+outputFunctionName inherited by EJS
+        ↓
+EJS code generation
+        ↓
+JavaScript execution</code></pre>
+
+<h2>The Payload</h2>
+
+<p>The final request was a single GET request:</p>
+
+<pre><code>/?__proto__.outputFunctionName=x;var r=require('child_process').execSync('printenv').toString();__append(r);var y</code></pre>
+
+<p>The polluted value was inserted into the generated function, and <code>require('child_process').execSync()</code> gave me command execution. Because the same request both polluted the object and rendered the page, the command output came directly back in the HTTP response.</p>
+
+<h2>Flag</h2>
+
+<div class="answer">africc{st4g3_p0llut10n_4nd_rce}</div>
+
+<p>The important lesson here was that prototype pollution was not the final impact by itself. The interesting question is always: <strong>which polluted property is later consumed, and what does the consumer do with it?</strong></p>
+
+  </div>
+  <footer class="wpost-foot">
+    <a class="btn-line" href="../index.html#writing">← Back to all writeups</a>
+  </footer>
+</article>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span>Set in Geist &amp; JetBrains Mono</span>
+    <span><a class="ulink" href="../index.html#writing">Back to the site</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

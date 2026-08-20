@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Confused Deputy — AFRICC CTF — cuddest</title>
+<meta name="description" content="JWT RS256 to HS256 algorithm confusion to forge admin tokens.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/writeups.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="logo" href="../index.html#writing" aria-label="cuddest — back to writeups">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+    <span class="topbar-cta"><a class="ulink" href="../index.html#writing">← All writeups</a></span>
+  </div>
+</header>
+
+<article class="wpost">
+  <header class="wpost-head">
+    <p class="wpost-meta"><span>AFRICC 2026</span><span>8 min read</span></p>
+    <h1>Confused Deputy</h1>
+  </header>
+  <div class="wpost-body">
+
+<p>The challenge started with a simple briefing page. There were two normal logins, <code>guest</code> and <code>analyst</code>, and the page explicitly said that no admin account existed.</p>
+
+<p>That last line was suspicious enough to make the objective pretty clear: I was probably supposed to create one.</p>
+
+<h2>Recon</h2>
+
+<p>I checked <code>/api</code>, which exposed the relevant endpoints:</p>
+
+<pre><code>login
+whoami
+admin
+debug</code></pre>
+
+<p>Logging in as <code>analyst</code> returned a JWT. I decoded it and found:</p>
+
+<pre><code>{
+  "alg": "RS256",
+  "role": "user"
+}</code></pre>
+
+<p>The admin endpoint required the role to be <code>admin</code>, so the first question became: where does the application get the key it uses to verify the JWT?</p>
+
+<h2>Finding the Public Key</h2>
+
+<p>Because the token used RS256, I looked for the public key and eventually found it at:</p>
+
+<pre><code>/.well-known/jwks.json</code></pre>
+
+<p>The endpoint exposed the RSA public key in PEM form. Normally that is exactly what you want. A public key is supposed to be public.</p>
+
+<p>The problem appears when an application allows the <strong>algorithm in the JWT header to decide how the signature should be verified</strong>.</p>
+
+<h2>RS256 to HS256 Algorithm Confusion</h2>
+
+<p>RS256 is asymmetric. The server signs with a private RSA key and verifies with the corresponding public key.</p>
+
+<p>HS256 is symmetric. The same secret is used to sign and verify.</p>
+
+<p>If the verification code accepts both algorithms and simply trusts the <code>alg</code> value from the token header, an attacker can change <code>RS256</code> to <code>HS256</code> and make the server interpret the public RSA key as an HMAC secret.</p>
+
+<p>I built a new token with <code>HS256</code> as the algorithm and <code>role: admin</code> in the payload, using the exposed PEM bytes as the HMAC key.</p>
+
+<p>The first attempt failed because I stripped the trailing newline from the PEM file. That tiny detail mattered — the signature is calculated over the exact key bytes.</p>
+
+<p>Once I preserved the PEM byte-for-byte, the forged token was accepted.</p>
+
+<h2>Flag</h2>
+
+<div class="answer">africc{alg_confusion_3v3rywh3r3}</div>
+
+<h2>Full Chain</h2>
+
+<pre><code>JWT with RS256
+      ↓
+Find public verification key
+      ↓
+Change alg to HS256
+      ↓
+Sign with public key bytes
+      ↓
+Server accepts forged token
+      ↓
+Admin role → Flag</code></pre>
+
+<p>The core security mistake is not that the public key was exposed. The real problem is the trust placed in the token's requested algorithm. A secure implementation should pin the allowed algorithm and never treat a public verification key as a valid HMAC secret.</p>
+
+  </div>
+  <footer class="wpost-foot">
+    <a class="btn-line" href="../index.html#writing">← Back to all writeups</a>
+  </footer>
+</article>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span>Set in Geist &amp; JetBrains Mono</span>
+    <span><a class="ulink" href="../index.html#writing">Back to the site</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

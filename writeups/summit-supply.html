@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Summit Supply — AFRICC CTF — cuddest</title>
+<meta name="description" content="Template literal injection, path traversal, and Jinja SSTI chained to root RCE.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/writeups.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="logo" href="../index.html#writing" aria-label="cuddest — back to writeups">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+    <span class="topbar-cta"><a class="ulink" href="../index.html#writing">← All writeups</a></span>
+  </div>
+</header>
+
+<article class="wpost">
+  <header class="wpost-head">
+    <p class="wpost-meta"><span>AFRICC 2026</span><span>20 min read</span></p>
+    <h1>Summit Supply</h1>
+  </header>
+  <div class="wpost-body">
+
+<blockquote>Solving this challenge felt like Troy's war. Getting the flag out of the box at the end was basically Odysseus trying to make it home.</blockquote>
+
+<h2>Recon</h2>
+
+<p>The application was split into three services behind one Nginx instance. One header caught my attention immediately:</p>
+
+<pre><code>Service-Worker-Allowed: /challenge/</code></pre>
+
+<p>The session was a JWT containing <code>id</code>, <code>exp</code>, and <code>antiCSRFToken</code>. The session cookie was <strong>not</strong> marked <code>HttpOnly</code>, which immediately made it worth testing for client-side exposure.</p>
+
+<p>Once logged in, the application exposed a small marketplace with three interesting features: adding a new item, viewing product pages, and reporting a listing to a bot.</p>
+
+<h2>The Note Field</h2>
+
+<p>The interesting code on product pages looked like this:</p>
+
+<pre><code>let note = `USER CONTENT`;
+const clean = DOMPurify.sanitize(note, {
+    FORBID_ATTR: ['id', 'style'],
+    USE_PROFILES: {html: true}
+});
+document.getElementById('note').innerHTML += clean;</code></pre>
+
+<p>The application inserted the user value directly into a JavaScript template literal <strong>before</strong> DOMPurify ran. Backticks were stripped, <code>&lt;</code>, <code>&gt;</code> and <code>&amp;</code> were encoded, but <code>${C}</code> survived. This was not HTML injection — it was JavaScript expression interpolation.</p>
+
+<h2>Turning the Bot Into a Browser Oracle</h2>
+
+<p>Instead of trying to force the bot to exfiltrate to an external server, I used the application itself as the communication channel. I created a product whose description contained whatever I wanted to steal, made the bot visit it, then read that same product back through my normal authenticated session.</p>
+
+<p>The first test was <code>document.cookie</code>. The response contained the session cookie including the JWT. The decoded token belonged to <code>id: 1</code> — the bot was the administrator.</p>
+
+<h2>The Real Second Bug: File Upload Path Traversal</h2>
+
+<p>The contract upload endpoint did not sanitize the multipart filename. I tested:</p>
+
+<pre><code>../static/js/pwn2.js</code></pre>
+
+<p>and the file was written into the application's static directory. The response messages gave me a small write oracle: <code>Contract Added</code> meant success, <code>Invalid PDF!</code> meant content failed validation.</p>
+
+<h2>Bypassing the PDF Validation</h2>
+
+<p>The validator did not care about what came after the end of the PDF. So the strategy was: valid PDF + extra attacker-controlled bytes.</p>
+
+<h2>From File Write to SSTI</h2>
+
+<p>The application used Jinja templates. I built a minimal valid PDF and appended <code>ZZ{{7*7}}ZZ</code>. When <code>ZZ49ZZ</code> started appearing on pages, I knew I had overwritten a shared layout partial.</p>
+
+<pre><code>{{ cycler.__init__.__globals__.os.popen("id").read() }}</code></pre>
+
+<p>The response returned <code>uid=0(root)</code>.</p>
+
+<h2>The Worker Problem</h2>
+
+<p>The application ran under uWSGI with multiple workers. Different requests could hit different workers, and each could have a different copy of the poisoned template. Reading command output directly became a coin flip.</p>
+
+<p>The fix was to make the payload write the result into the application's static directory instead of printing it. Now it only took one successful render by any worker to create the files.</p>
+
+<h2>Flag</h2>
+
+<div class="answer">africc{summ1t_5uppl7_ch41n_h45_4_br0k3n_l1nk_4nd_1t5_th3_4dm1n_1509a3452f23a454608ed10ad0840f50}</div>
+
+<h2>Attack Chain</h2>
+
+<pre><code>Template literal injection
+        ↓
+Blind JavaScript execution
+        ↓
+Bot session theft → Administrator access
+        ↓
+Path traversal in file upload
+        ↓
+Arbitrary file write → PDF parser bypass
+        ↓
+Jinja template poisoning
+        ↓
+Server-side template injection
+        ↓
+Root command execution
+        ↓
+Reliable file-based exfiltration → Flag</code></pre>
+
+<p>Almost every stage depended on noticing a small implementation detail in the previous one. The first bug did not give me the flag directly. It gave me the bot's identity, which gave me the upload feature, which gave me file write, which gave me SSTI, which finally gave me code execution.</p>
+
+  </div>
+  <footer class="wpost-foot">
+    <a class="btn-line" href="../index.html#writing">← Back to all writeups</a>
+  </footer>
+</article>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span>Set in Geist &amp; JetBrains Mono</span>
+    <span><a class="ulink" href="../index.html#writing">Back to the site</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

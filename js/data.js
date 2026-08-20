@@ -212,6 +212,72 @@ const WRITEUPS = [
       "A reproducible Elastic Stack monitoring platform — Filebeat and Winlogbeat telemetry, Logstash normalization, Elasticsearch indexing, Kibana investigation and a detection engine, running in simulation, real and hybrid modes.",
     url: "writeups/elk-security-monitoring.html",
   },
+  {
+    title: "Ledger Bloom — Python 2 Jail Escape via Encoding Declaration",
+    tags: ["AFRICC", "Web", "Python", "Flask", "Jail", "CTF"],
+    event: "AFRICC",
+    category: "CTFs",
+    date: "2026-02-14",
+    readTime: "20 min",
+    summary:
+      "Bypassing a Flask exec jail by abusing Python 2 byte-string encoding declarations, frame chain escape, and session-based output exfiltration.",
+    url: "writeups/ledger-bloom.html",
+  },
+  {
+    title: "Confused Deputy — JWT RS256 to HS256 Algorithm Confusion",
+    tags: ["AFRICC", "Web", "JWT", "Authentication", "CTF"],
+    event: "AFRICC",
+    category: "CTFs",
+    date: "2026-02-14",
+    readTime: "8 min",
+    summary:
+      "Forge an admin JWT by switching the algorithm from RS256 to HS256 and signing with the exposed RSA public key.",
+    url: "writeups/confused-deputy.html",
+  },
+  {
+    title: "Deputy's Ledger — Privilege Escalation via GraphQL and JWT Confusion",
+    tags: ["AFRICC", "Web", "JWT", "GraphQL", "Privilege Escalation", "CTF"],
+    event: "AFRICC",
+    category: "CTFs",
+    date: "2026-02-14",
+    readTime: "18 min",
+    summary:
+      "Chain self-service role modification, GraphQL introspection leak, and JWT algorithm confusion across two organizations to reach the master ledger.",
+    url: "writeups/deputys-ledger.html",
+  },
+  {
+    title: "Tired of Running — Four Bugs Chained to Root",
+    tags: ["AFRICC", "Web", "SQL Injection", "YARA", "CRLF", "CTF"],
+    event: "AFRICC",
+    category: "CTFs",
+    date: "2026-02-14",
+    readTime: "20 min",
+    summary:
+      "Length truncation, SQL injection, YARA-based file oracle, and HTTP request smuggling chained to read a root-only credential and POST it to an internal flag server.",
+    url: "writeups/tired-of-running.html",
+  },
+  {
+    title: "SecureNotes — Prototype Pollution to EJS RCE",
+    tags: ["AFRICC", "Web", "Prototype Pollution", "EJS", "RCE", "CTF"],
+    event: "AFRICC",
+    category: "CTFs",
+    date: "2026-02-14",
+    readTime: "8 min",
+    summary:
+      "Exploiting a custom query parser to pollute Object.prototype, then abusing EJS outputFunctionName for code execution.",
+    url: "writeups/securenotes.html",
+  },
+  {
+    title: "Summit Supply — Template Injection to SSTI to Root",
+    tags: ["AFRICC", "Web", "SSTI", "Path Traversal", "Jinja", "CTF"],
+    event: "AFRICC",
+    category: "CTFs",
+    date: "2026-02-14",
+    readTime: "20 min",
+    summary:
+      "Template literal injection, bot session theft, file upload path traversal, Jinja template poisoning, and SSTI chained to root command execution.",
+    url: "writeups/summit-supply.html",
+  },
 ];
 
 /* ------------------------------------------------------------
