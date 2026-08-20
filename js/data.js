@@ -217,7 +217,7 @@ const WRITEUPS = [
     tags: ["AFRICC", "Web", "Python", "Flask", "Jail", "CTF"],
     event: "AFRICC",
     category: "CTFs",
-    date: "2026-02-14",
+    date: "2026-08-10",
     readTime: "20 min",
     summary:
       "Bypassing a Flask exec jail by abusing Python 2 byte-string encoding declarations, frame chain escape, and session-based output exfiltration.",
@@ -228,7 +228,7 @@ const WRITEUPS = [
     tags: ["AFRICC", "Web", "JWT", "Authentication", "CTF"],
     event: "AFRICC",
     category: "CTFs",
-    date: "2026-02-14",
+    date: "2026-08-12",
     readTime: "8 min",
     summary:
       "Forge an admin JWT by switching the algorithm from RS256 to HS256 and signing with the exposed RSA public key.",
@@ -239,7 +239,7 @@ const WRITEUPS = [
     tags: ["AFRICC", "Web", "JWT", "GraphQL", "Privilege Escalation", "CTF"],
     event: "AFRICC",
     category: "CTFs",
-    date: "2026-02-14",
+    date: "2026-08-14",
     readTime: "18 min",
     summary:
       "Chain self-service role modification, GraphQL introspection leak, and JWT algorithm confusion across two organizations to reach the master ledger.",
@@ -250,7 +250,7 @@ const WRITEUPS = [
     tags: ["AFRICC", "Web", "SQL Injection", "YARA", "CRLF", "CTF"],
     event: "AFRICC",
     category: "CTFs",
-    date: "2026-02-14",
+    date: "2026-08-16",
     readTime: "20 min",
     summary:
       "Length truncation, SQL injection, YARA-based file oracle, and HTTP request smuggling chained to read a root-only credential and POST it to an internal flag server.",
@@ -261,7 +261,7 @@ const WRITEUPS = [
     tags: ["AFRICC", "Web", "Prototype Pollution", "EJS", "RCE", "CTF"],
     event: "AFRICC",
     category: "CTFs",
-    date: "2026-02-14",
+    date: "2026-08-18",
     readTime: "8 min",
     summary:
       "Exploiting a custom query parser to pollute Object.prototype, then abusing EJS outputFunctionName for code execution.",
@@ -272,7 +272,7 @@ const WRITEUPS = [
     tags: ["AFRICC", "Web", "SSTI", "Path Traversal", "Jinja", "CTF"],
     event: "AFRICC",
     category: "CTFs",
-    date: "2026-02-14",
+    date: "2026-08-20",
     readTime: "20 min",
     summary:
       "Template literal injection, bot session theft, file upload path traversal, Jinja template poisoning, and SSTI chained to root command execution.",
