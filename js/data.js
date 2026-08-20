@@ -278,6 +278,17 @@ const WRITEUPS = [
       "Template literal injection, bot session theft, file upload path traversal, Jinja template poisoning, and SSTI chained to root command execution.",
     url: "writeups/summit-supply.html",
   },
+  {
+    title: "ITC Trilogy — Three Parsers Walk Into /admin (Challenge Author)",
+    tags: ["ITC CTF", "Web", "Parser Differential", "SSRF", "Author"],
+    event: "ITC CTF 2026 Blida",
+    category: "CTFs",
+    date: "2026-08-15",
+    readTime: "15 min",
+    summary:
+      "Three web challenges I authored for ITC CTF 2026 Blida — parser differential attacks on proxy headers and SSRF. Writeup by Samir Djili (2nd place, writeup contest).",
+    url: "writeups/itc-trilogy.html",
+  },
 ];
 
 /* ------------------------------------------------------------

