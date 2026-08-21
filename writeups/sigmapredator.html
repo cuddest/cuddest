@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SigmaPredator — Windows Event Log Clearing Detection — cuddest</title>
+<meta name="description" content="Designing and validating Sigma rules for Windows Event Log clearing across PowerShell, native CLI, WMI/WMIC, and Windows event-log telemetry.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/writeups.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="logo" href="../index.html#writing" aria-label="cuddest — back to writeups">
+      <svg class="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="20.8" height="20.8" rx="2"
+              fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M15.6 8.9a4.2 4.2 0 1 0 0 6.2" fill="none"
+              stroke="var(--logo-accent)" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-word">uddest</span>
+    </a>
+    <span class="topbar-cta"><a class="ulink" href="../index.html#writing">← All writeups</a></span>
+  </div>
+</header>
+
+<article class="wpost">
+  <header class="wpost-head">
+    <p class="wpost-meta"><span>CyberDefenders</span><span>25 min read</span></p>
+    <h1>SigmaPredator — Windows Event Log Clearing Detection</h1>
+  </header>
+  <div class="wpost-body">
+
+<blockquote><strong>CyberDefenders Lab:</strong> SigmaPredator<br>
+<strong>Focus:</strong> Designing and validating Sigma rules for Windows Event Log clearing across PowerShell, native CLI, WMI/WMIC, and Windows event-log telemetry.</blockquote>
+
+<h2>1. Introduction</h2>
+
+<p>Windows Event Logs are one of the most important sources of host-level evidence during an investigation. They can record authentication activity, process execution, service activity, system changes, and other events that help analysts reconstruct an intrusion.</p>
+
+<p>For an attacker, however, these logs can become a liability. Once they have obtained sufficient privileges, they may attempt to clear or remove event logs in order to reduce the evidence available to defenders. MITRE ATT&CK maps this behavior to <strong>Indicator Removal: Clear Windows Event Logs (T1070.001)</strong> in the taxonomy used by this lab. The behavior is also associated with defense evasion because it attempts to reduce investigative visibility.</p>
+
+<p>The purpose of this lab is not simply to recognize that a log was cleared. The goal is to understand the <strong>different execution paths that can result in the same behavior</strong>, identify the telemetry produced by each path, and then translate those observations into Sigma rules that can be validated against historical Windows event data with Chainsaw.</p>
+
+<p>The investigation therefore follows this model:</p>
+
+<pre><code>                 Windows Event Log Clearing
+                           |
+        +------------------+------------------+
+        |                  |                  |
+      CLI                WMI/WMIC          PowerShell
+        |                  |                  |
+    wevtutil         NTEVENTLOG alias   Cmdlets / .NET APIs
+        |                  |                  |
+   Process creation   Process creation    Script Block Logging
+      / Sysmon              / WMI              Event ID 4104
+        |                  |                  |
+        +------------------+------------------+
+                           |
+                  Windows Event Log artifacts
+                      Event ID 104 / 1102
+                           |
+                    Sigma detections
+                           |
+                        Chainsaw
+                           |
+                    Historical validation</code></pre>
+
+<p>The remainder of this write-up builds that map from the ground up.</p>
+
+<hr>
+
+<h2>2. Part I — Research and Detection Planning</h2>
+
+<p>Before writing a Sigma rule, the first step was to determine which native Windows mechanisms an attacker could use to clear event logs and, more importantly, <strong>what evidence each mechanism would leave behind</strong>.</p>
+
+<p>The main paths investigated were:</p>
+
+<table>
+<tr><th>Technique / Mechanism</th><th>Execution layer</th><th>Useful telemetry</th><th>Main artifact used in the lab</th></tr>
+<tr><td><code>wevtutil</code></td><td>Native Windows CLI</td><td>Process creation / command line</td><td>Sysmon Event ID 1</td></tr>
+<tr><td><code>wmic</code> + <code>NTEVENTLOG</code></td><td>WMI through WMIC</td><td>Process creation and WMI-related activity</td><td>Sysmon Event ID 1 / WMI artifacts</td></tr>
+<tr><td>PowerShell cmdlets</td><td>PowerShell</td><td>Script Block Logging</td><td>PowerShell Event ID 4104</td></tr>
+<tr><td>PowerShell .NET APIs</td><td>PowerShell / .NET</td><td>Script Block Logging where applicable</td><td>Event ID 4104</td></tr>
+<tr><td>Event log actually being cleared</td><td>Windows Event Log</td><td>Security/System events</td><td>Event ID 1102 / 104</td></tr>
+</table>
+
+<p>This distinction is important. A detector can look for the <strong>attempt to clear a log</strong>, such as a process executing <code>wevtutil</code>, or for the <strong>result of the operation</strong>, such as Event ID 1102 indicating that the Security log was cleared.</p>
+
+<p>That difference is the foundation of the three Sigma rules used later in the lab.</p>
+
+<hr>
+
+<h2>3. Understanding <code>wevtutil</code></h2>
+
+<h3>3.1 What is <code>wevtutil</code>?</h3>
+
+<p><code>wevtutil.exe</code> is a native Windows command-line utility for managing the Windows Event Log system. Microsoft documents it as a tool that can query logs, retrieve provider information, export logs, configure logging, and <strong>clear event logs</strong>. It is included in <code>%windir%\System32</code>.</p>
+
+<p>For detection engineering, <code>wevtutil</code> is particularly interesting because it is a <strong>legitimate Microsoft-signed utility that can be abused for defense evasion</strong>. This is a classic example of a dual-use binary: the presence of the executable itself is not malicious, but a command such as <code>clear-log</code> is highly relevant when investigating possible log tampering.</p>
+
+<h3>3.2 The clearing operation</h3>
+
+<p>The important subcommand for this lab is:</p>
+
+<pre><code>wevtutil cl &lt;LogName&gt;</code></pre>
+
+<p><code>cl</code> is the short form of <code>clear-log</code>. Microsoft documents it as clearing events from the specified event log, with an optional <code>/bu</code> parameter that can back up the events before clearing them.</p>
+
+<p>For example, the technique can target the standard Windows logs:</p>
+
+<pre><code>wevtutil cl System
+wevtutil cl Application
+wevtutil cl Security</code></pre>
+
+<p>The exact syntax is less important for detection than the combination of:</p>
+
+<pre><code>wevtutil + clear-log / cl + target log</code></pre>
+
+<p>That combination gives us much stronger detection logic than simply alerting on <code>wevtutil.exe</code>.</p>
+
+<h3>3.3 Why <code>wevtutil</code> is useful to a defender</h3>
+
+<p>The advantage of detecting <code>wevtutil</code> at the process level is that <strong>the detector can fire on the attacker's attempt</strong>, potentially before the defender sees the resulting clearing event.</p>
+
+<p>The disadvantage is that <code>wevtutil</code> has many legitimate administrative uses. Therefore, a mature detection should not alert on the executable alone. It should anchor on the specific destructive subcommands and, ideally, the binary identity as well.</p>
+
+<h3>3.4 Comparison with the other approaches</h3>
+
+<table>
+<tr><th>Method</th><th>Main advantage</th><th>Main limitation</th></tr>
+<tr><td><code>wevtutil</code></td><td>Native, simple, command line is highly visible in process telemetry</td><td>Legitimate administrative use creates potential false positives</td></tr>
+<tr><td>WMIC/WMI</td><td>Alternative management path; can blend into normal WMI administration</td><td>More indirect and can be harder to interpret from a single event</td></tr>
+<tr><td>PowerShell</td><td>Rich scripting capability and multiple APIs/cmdlets</td><td>Requires useful PowerShell telemetry, especially Script Block Logging</td></tr>
+<tr><td>Event ID 104/1102</td><td>Direct evidence that a log was actually cleared</td><td>It tells us the effect occurred, not necessarily which process caused it</td></tr>
+</table>
+
+<p>This already suggests a defense-in-depth approach: <strong>detect the execution path and also detect the resulting log-clearing event</strong>.</p>
+
+<hr>
+
+<h2>4. WMI, WMIC, and the <code>NTEVENTLOG</code> Class/Alias</h2>
+
+<h3>4.1 What is WMI?</h3>
+
+<p><strong>Windows Management Instrumentation (WMI)</strong> is Windows' management infrastructure for interacting with system objects and administrative functionality through a common programming and management interface.</p>
+
+<p>Unlike a simple executable such as <code>wevtutil</code>, WMI is an abstraction layer. A program can query or invoke operations through WMI classes rather than directly manipulating the underlying resource.</p>
+
+<p>This matters for detection because attackers can use WMI to perform actions without relying exclusively on the most obvious command-line utilities.</p>
+
+<h3>4.2 What is WMIC?</h3>
+
+<p><strong>WMIC (Windows Management Instrumentation Command-line)</strong> is a command-line interface to WMI. Historically, it allowed operators to interact with WMI classes directly from the command line.</p>
+
+<p>For this lab, the important distinction is:</p>
+
+<pre><code>WMI       = the Windows management infrastructure
+WMIC      = a command-line interface to WMI
+NTEVENTLOG = the WMIC alias used for the Windows event-log WMI class</code></pre>
+
+<p>So when the lab asks which WMI class is involved, the precise terminology is important: the WMIC alias is <strong><code>NTEVENTLOG</code></strong>, while the underlying WMI class is <strong><code>Win32_NTEventLogFile</code></strong>. Microsoft documents <code>Win32_NTEventLogFile</code> as representing the logical file/directory associated with an operating system event log.</p>
+
+<h3>4.3 Why <code>NTEVENTLOG</code> matters for detection</h3>
+
+<p>A WMIC command can use the event-log WMI class and invoke the clearing operation against a selected log. In a process-creation record, this may appear as a command line similar to:</p>
+
+<pre><code>wmic nteventlog where "LogFileName='System'" cleareventlog</code></pre>
+
+<p>The important observation is that the attacker is <strong>not using <code>wevtutil</code> at all</strong>. The underlying objective is identical, but the execution path is different.</p>
+
+<p>That is exactly why a detector based only on <code>wevtutil.exe</code> is incomplete.</p>
+
+<h3>4.4 Comparing WMI with <code>wevtutil</code></h3>
+
+<pre><code>wevtutil.exe
+    |
+    +--> clear-log
+
+wmic.exe
+    |
+    +--> NTEVENTLOG / Win32_NTEventLogFile
+            |
+            +--> ClearEventLog</code></pre>
+
+<p>This distinction becomes important later when we explicitly try to detect <strong>native CLI clearing while excluding WMI-based clearing</strong>.</p>
+
+<hr>
+
+<h2>5. PowerShell Detection</h2>
+
+<p>PowerShell provides several ways to manipulate Windows event logs. For this lab, the important question is not only <em>which command can clear a log</em>, but <strong>which PowerShell telemetry allows us to recover that command from historical evidence</strong>.</p>
+
+<h3>5.1 Script Block Logging and Event ID 4104</h3>
+
+<p>The required PowerShell logging channel is <strong>Script Block Logging</strong>.</p>
+
+<p>When Script Block Logging is enabled, PowerShell records the content of processed script blocks in the PowerShell Operational event log. The relevant event is <strong>Event ID 4104</strong>. Microsoft documents Event ID 4104 as the Script Block Logging event.</p>
+
+<p>For a detection engineer, this is extremely valuable because the event can contain the actual PowerShell statement that an attacker executed, rather than only indicating that <code>powershell.exe</code> started.</p>
+
+<pre><code>powershell.exe
+      |
+      +--> Script Block Logging
+              |
+              +--> Event ID 4104
+                      |
+                      +--> ScriptBlockText</code></pre>
+
+<p>That <code>ScriptBlockText</code> field becomes the main field used in the first Sigma rule.</p>
+
+<h3>5.2 PowerShell cmdlets used for log clearing</h3>
+
+<p>The two built-in PowerShell cmdlets relevant to the lab are:</p>
+
+<h4><code>Clear-EventLog</code></h4>
+
+<p><code>Clear-EventLog</code> clears entries from the specified event logs. Microsoft documents that it can operate against local or remote computers and requires appropriate administrative privileges.</p>
+
+<pre><code>Clear-EventLog -LogName System</code></pre>
+
+<h4><code>Remove-EventLog</code></h4>
+
+<p><code>Remove-EventLog</code> is another native PowerShell EventLog cmdlet, but it is important to distinguish it from <code>Clear-EventLog</code>: <code>Clear-EventLog</code> directly deletes the entries from a specified classic event log, while <code>Remove-EventLog</code> is used to remove an event log and its associated event sources.</p>
+
+<p>For this lab, both names are therefore useful strings to search for in PowerShell Script Block Logging.</p>
+
+<h3>5.3 Native .NET APIs</h3>
+
+<p>PowerShell can also access .NET functionality instead of relying exclusively on a cmdlet. Relevant APIs include methods exposed through the following namespaces:</p>
+
+<pre><code>System.Diagnostics.Eventing.Reader.EventLogSession.ClearLog
+System.Diagnostics.EventLog.Clear</code></pre>
+
+<p>This creates another detection challenge. A detector that only searches for <code>Clear-EventLog</code> and <code>Remove-EventLog</code> could miss an attacker who invokes the underlying API from PowerShell.</p>
+
+<p>However, the lab explicitly states that PowerShell is running in <strong>Constrained Language Mode</strong> and instructs the rule to disregard .NET binaries. That constraint is why the practical detection rule focuses on the observable command strings rather than building a .NET-specific condition.</p>
+
+<hr>
+
+<h2>6. Detecting the Result: Event IDs 104 and 1102</h2>
+
+<p>The previous sections focused on detecting the <strong>action</strong> that performs log clearing. Windows also provides telemetry for the <strong>result</strong> of that action.</p>
+
+<p>Two event IDs are especially important:</p>
+
+<table>
+<tr><th>Event ID</th><th>Typical log</th><th>Meaning</th></tr>
+<tr><td><strong>104</strong></td><td>System</td><td>The Windows Event Log service reports that a log was cleared</td></tr>
+<tr><td><strong>1102</strong></td><td>Security</td><td>The Security audit log was cleared</td></tr>
+</table>
+
+<p>This creates an important distinction:</p>
+
+<pre><code>Process / PowerShell telemetry
+        |
+        +--> tells us HOW the attacker attempted the action
+
+Event ID 104 / 1102
+        |
+        +--> tells us that the log-clearing effect occurred</code></pre>
+
+<p>For incident response, the second category is often extremely high-value because it provides direct evidence of log tampering. For threat hunting, the first category can be even more useful because it may reveal the operator's command, process, user, parent process, and execution context.</p>
+
+<hr>
+
+<h2>7. The Detection Map</h2>
+
+<pre><code>                         T1070.001
+              Clear Windows Event Logs
+                              |
+        +---------------------+---------------------+
+        |                     |                     |
+   PowerShell                CLI                 WMI/WMIC
+        |                     |                     |
+ Script Block            wevtutil.exe           wmic.exe
+ Logging                    |                     |
+        |               Process Create        Process Create
+   Event ID 4104              |                     |
+        |                  Sysmon 1             Sysmon 1
+        |                     |                     |
+        +---------------------+---------------------+
+                              |
+                    Windows Event Log result
+                              |
+                    +---------+---------+
+                    |                   |
+                 Event 104           Event 1102
+                  System             Security</code></pre>
+
+<p>The practical consequence is that there is <strong>no single perfect telemetry source</strong>.</p>
+
+<p>A robust defensive strategy combines:</p>
+
+<ol>
+<li><strong>Execution telemetry</strong> — catches the attempted technique.</li>
+<li><strong>Script Block Logging</strong> — exposes PowerShell content.</li>
+<li><strong>Process creation</strong> — exposes native CLI/WMI invocation and command-line context.</li>
+<li><strong>Windows event-log clearing events</strong> — confirms the actual effect.</li>
+</ol>
+
+<hr>
+
+<h2>8. Part II — Sigma Rule Development and Validation</h2>
+
+<h3>8.1 What is Sigma?</h3>
+
+<p><strong>Sigma</strong> is a generic detection-rule format designed to describe suspicious log activity in a platform-independent way.</p>
+
+<p>The main idea is to separate the <strong>detection logic</strong> from the specific SIEM query language. A Sigma rule can then be translated into a query suitable for different platforms.</p>
+
+<p>The general structure is:</p>
+
+<pre><code>title:
+    ...
+
+id:
+    ...
+
+status:
+    ...
+
+description:
+    ...
+
+logsource:
+    ...
+
+detection:
+    ...
+
+level:
+    ...
+
+tags:
+    ...</code></pre>
+
+<p>The most important part operationally is the relationship between <code>selection</code> and <code>condition</code>.</p>
+
+<p>For example:</p>
+
+<pre><code>detection:
+  selection:
+    EventID: 4104
+    ScriptBlockText|contains:
+      - 'Clear-EventLog'
+      - 'Remove-EventLog'
+  condition: selection</code></pre>
+
+<p>The <code>contains</code> modifier tells Sigma to search the selected field for any of the specified strings. The list therefore behaves as a set of alternatives inside that field, while the surrounding fields must also match.</p>
+
+<hr>
+
+<h2>9. Question 1 — PowerShell Event Log Clearing</h2>
+
+<h3>9.1 Task interpretation</h3>
+
+<p>The first detection exercise asked for a Sigma rule that detects event-log clearing through <strong>PowerShell Script Block Logging</strong> and then validates the rule against the historical logs with Chainsaw.</p>
+
+<p>The lab also provides an important constraint:</p>
+
+<blockquote>PowerShell is operating in Constrained Language Mode, so the rule should disregard .NET binaries.</blockquote>
+
+<p>The useful telemetry is therefore:</p>
+
+<pre><code>Log source       = Windows PowerShell
+Event ID         = 4104
+Important field  = ScriptBlockText
+Behavior         = event-log clearing commands</code></pre>
+
+<h3>9.2 Rule used</h3>
+
+<pre><code>title: PowerShell Event Log Clearing
+id: 1235678-1234-1234-1234-123456789abc
+status: testing
+description: Detects Windows Event Logs deletion through ScriptBlock Logging (Event ID 4104) while ignoring .NET binaries due to Constrained Language Mode constraints.
+logsource:
+  product: windows
+  service: powershell
+detection:
+  selection:
+    EventID: 4104
+    ScriptBlockText|contains:
+      - 'Clear-EventLog'
+      - 'clear-eventlog'
+      - 'Remove-EventLog'
+      - 'remove-eventlog'
+      - 'wevtutil'
+  condition: selection
+level: high
+tags:
+  - attack.defense_evasion
+  - attack.t1070.001</code></pre>
+
+<h3>9.3 Breaking down the rule</h3>
+
+<h4><code>logsource</code></h4>
+
+<pre><code>logsource:
+  product: windows
+  service: powershell</code></pre>
+
+<p>This tells the detection engine that the rule is intended for Windows PowerShell telemetry rather than generic Windows events.</p>
+
+<h4>Event ID selection</h4>
+
+<pre><code>EventID: 4104</code></pre>
+
+<p>This restricts matching to PowerShell Script Block Logging events.</p>
+
+<h4>Script content matching</h4>
+
+<pre><code>ScriptBlockText|contains:
+  - 'Clear-EventLog'
+  - 'clear-eventlog'
+  - 'Remove-EventLog'
+  - 'remove-eventlog'
+  - 'wevtutil'</code></pre>
+
+<p>The rule searches the actual script contents for commands associated with the clearing behavior.</p>
+
+<h4><code>condition</code></h4>
+
+<pre><code>condition: selection</code></pre>
+
+<p>This means the event must satisfy the entire selection. Within the <code>ScriptBlockText|contains</code> list, matching any one of the listed values is sufficient, while the event must also be Event ID 4104.</p>
+
+<h4>Severity and ATT&CK mapping</h4>
+
+<pre><code>level: high
+
+tags:
+  - attack.defense_evasion
+  - attack.t1070.001</code></pre>
+
+<p>A log-clearing action is high-value defense-evasion telemetry, especially when the action targets the Security or System logs.</p>
+
+<hr>
+
+<h2>10. Validating Question 1 with Chainsaw</h2>
+
+<p>Chainsaw was executed against the historical EVTX/EVT collection using the Sigma rule and the provided mapping file:</p>
+
+<pre><code>.\chainsaw.exe hunt "C:\Users\Administrator\Desktop\Start Here\Historical Logs" `
+  -s "..\rules\question-1.yml" `
+  --mapping ".\mappings\sigma-event-logs-all.yml"</code></pre>
+
+<p>Chainsaw reported that it loaded:</p>
+
+<pre><code>333 forensic artefacts
+75.6 MB
+1 detection rule</code></pre>
+
+<p>The earliest matching event was:</p>
+
+<pre><code>2021-10-25 18:04:24</code></pre>
+
+<p>The matching event had the following key properties:</p>
+
+<pre><code>Provider: Microsoft-Windows-PowerShell
+Event ID: 4104
+Computer: FS03.offsec.lan
+ScriptBlockText: Clear-EventLog -LogName application, system</code></pre>
+
+<p>Therefore, the answer to the first validation question is:</p>
+
+<blockquote><strong>Earliest detection: 2021-10-25 18:04:24</strong></blockquote>
+
+<p>This demonstrates the value of Script Block Logging: the event does not merely indicate that PowerShell ran; it exposes the actual <code>Clear-EventLog</code> command that was processed.</p>
+
+<hr>
+
+<h2>11. Question 2 — Native CLI Detection with Sysmon</h2>
+
+<h3>11.1 Task interpretation</h3>
+
+<p>The second exercise changes the detection perspective. Instead of looking inside PowerShell, the objective is to detect <strong>native command-line event-log clearing utilities</strong>, such as <code>wevtutil</code>, using process-creation telemetry.</p>
+
+<p>The task specifically excludes WMI and allows Sysmon as a telemetry source.</p>
+
+<p>That changes the hunting model from:</p>
+
+<pre><code>PowerShell content -> Event ID 4104</code></pre>
+
+<p>to:</p>
+
+<pre><code>Process execution -> Sysmon Event ID 1 -> CommandLine</code></pre>
+
+<h3>11.2 Rule used</h3>
+
+<pre><code>title: Event Log Clearing via Sysmon Process Creation
+id: 87654321-4321-4321-4321-9abcdef12345
+status: testing
+description: Detects the execution of the wevtutil utility to clear event logs via Sysmon Process Creation (Event ID 1).
+logsource:
+  product: windows
+  service: sysmon
+detection:
+  selection:
+    EventID: 1
+    CommandLine|contains:
+      - 'wevtutil'
+      - ' cl '
+      - 'clear-log'
+  condition: selection
+level: high
+tags:
+  - attack.defense_evasion
+  - attack.t1070.001</code></pre>
+
+<h3>11.3 Why Sysmon Event ID 1 is useful</h3>
+
+<p>Sysmon Event ID 1 records process creation information. In the observed event, Chainsaw exposed fields including:</p>
+
+<pre><code>Image:            C:\Windows\System32\wevtutil.exe
+OriginalFileName: wevtutil.exe
+CommandLine:      wevtutil clear-log Security
+ParentImage:      C:\Windows\System32\cmd.exe
+User:             DESKTOP-6I5AMEJ\Marc
+IntegrityLevel:   High</code></pre>
+
+<p>This is significantly richer context than a simple string match. The defender can potentially identify:</p>
+
+<ul>
+<li>which executable ran;</li>
+<li>which command was supplied;</li>
+<li>who ran it;</li>
+<li>which parent process launched it;</li>
+<li>whether the process was elevated;</li>
+<li>and when it occurred.</li>
+</ul>
+
+<p>That makes process creation a particularly useful telemetry source for native utility abuse.</p>
+
+<hr>
+
+<h2>12. Why the WMI Exclusion Matters</h2>
+
+<p>The task specifically asks for native CLI clearing while excluding WMI. This is an important detection-engineering problem because the same underlying behavior can appear under different process names.</p>
+
+<p>For example:</p>
+
+<pre><code>wevtutil clear-log Security</code></pre>
+
+<p>and:</p>
+
+<pre><code>wmic nteventlog where "LogFileName='System'" cleareventlog</code></pre>
+
+<p>both pursue event-log clearing, but the first is native <code>wevtutil</code> execution while the second is a WMI/WMIC path.</p>
+
+<p>A detector that only searches for generic strings such as <code>clear</code>, <code>cl</code>, or <code>clear-log</code> can therefore become too broad.</p>
+
+<p>The lab hint specifically recommends anchoring on <strong>both the binary identity and the destructive sub-command</strong>:</p>
+
+<pre><code>wevtutil identity
+        AND
+clear-log / cl destructive intent</code></pre>
+
+<h3>Important validation note</h3>
+
+<p>The rule used during the exercise was intentionally simpler and still produced the requested latest timestamp from the supplied dataset. However, the raw Chainsaw output also showed a <code>wmic.exe</code> match at <code>2025-04-28 09:19:35</code> because the current <code>CommandLine|contains</code> logic is broader than a strict <code>wevtutil.exe</code> identity check.</p>
+
+<p>Therefore, the rule <strong>worked for the observed answer</strong>, but it is not as tightly scoped as the lab hint recommends. In a production detection, I would strengthen it by requiring <code>wevtutil.exe</code>/its original filename together with <code>clear-log</code> or the <code>cl</code> subcommand, and explicitly excluding <code>wmic.exe</code> when the backend supports that reliably.</p>
+
+<p>This is a useful lesson: a rule can produce the expected challenge answer while still leaving room for precision improvements.</p>
+
+<hr>
+
+<h2>13. Chainsaw Result for Question 2</h2>
+
+<p>The relevant matches included:</p>
+
+<h3>Match 1 — <code>wevtutil</code></h3>
+
+<pre><code>Timestamp: 2025-04-28 08:58:29
+Provider:  Microsoft-Windows-Sysmon
+Event ID:  1
+Image:     C:\Windows\System32\wevtutil.exe
+Command:   wevtutil clear-log Security
+User:      DESKTOP-6I5AMEJ\Marc
+Integrity: High</code></pre>
+
+<h3>Match 2 — <code>wmic</code></h3>
+
+<pre><code>Timestamp: 2025-04-28 09:19:35
+Provider:  Microsoft-Windows-Sysmon
+Event ID:  1
+Image:     C:\Windows\System32\wbem\WMIC.exe
+Command:   wmic nteventlog where "LogFileName='System'" cleareventlog
+User:      DESKTOP-6I5AMEJ\Marc
+Integrity: High</code></pre>
+
+<p>The latest match in the observed output was therefore:</p>
+
+<blockquote><strong>Latest match: 2025-04-28 09:19:35</strong></blockquote>
+
+<p>The <code>wmic.exe</code> event is particularly useful because it demonstrates why process-name-aware detection matters when multiple Windows mechanisms can perform the same administrative action.</p>
+
+<hr>
+
+<h2>14. Question 3 — Detecting the Clearing Event Itself</h2>
+
+<h3>14.1 Task interpretation</h3>
+
+<p>The final exercise moves one layer lower. Instead of detecting the process or script that attempted to clear a log, the task asks for a Sigma rule that identifies the Windows events generated when the clearing actually occurs.</p>
+
+<p>The two target events are:</p>
+
+<pre><code>104  -> System log cleared
+1102 -> Security audit log cleared</code></pre>
+
+<p>This is a classic <strong>result-based detector</strong>.</p>
+
+<h3>14.2 Initial mistake</h3>
+
+<p>My first attempt used a Security-only log source:</p>
+
+<pre><code>logsource:
+  product: windows
+  service: security</code></pre>
+
+<p>This produced no useful result because Event ID <strong>104</strong> is associated with the <strong>System</strong> log, while Event ID <strong>1102</strong> is associated with the <strong>Security</strong> log.</p>
+
+<p>This failure was instructive: the event ID alone is not enough. The <strong>log source must match the location where the event is actually generated</strong>.</p>
+
+<p>The corrected approach is to use a Windows-wide log source capable of matching both event IDs.</p>
+
+<h3>14.3 Rule used</h3>
+
+<pre><code>title: File Deletion Detection - Event Log Clearing
+id: 1235678-1234-1234-1234-123456789abc
+status: testing
+description: Detects when a Windows Event Log channel is cleared by tracking Event IDs 1102 and 104.
+logsource:
+  product: windows
+detection:
+  selection:
+    EventID:
+      - 1102
+      - 104
+  condition: selection
+level: high
+tags:
+  - attack.defense_evasion
+  - attack.t1070.001</code></pre>
+
+<h3>14.4 Why this rule is different from the first two</h3>
+
+<p>The previous rules tried to identify <strong>how</strong> the attacker performed the action:</p>
+
+<pre><code>PowerShell ScriptBlockText
+            OR
+Sysmon process + command line</code></pre>
+
+<p>This rule instead identifies the <strong>effect</strong>:</p>
+
+<pre><code>Event ID 104 or Event ID 1102</code></pre>
+
+<p>That gives it a very different detection profile. It can catch clearing regardless of whether the attacker used <code>wevtutil</code>, WMIC/WMI, PowerShell, Event Viewer, or another native or third-party mechanism.</p>
+
+<p>The trade-off is that it provides less information about the original execution method.</p>
+
+<hr>
+
+<h2>15. Chainsaw Result for Question 3</h2>
+
+<p>After correcting the log-source mistake and searching the historical collection, the earliest matching event was:</p>
+
+<blockquote><strong>2019-01-20 07:00</strong></blockquote>
+
+<p>This result reinforces why the log-source definition is part of the detection logic itself. Searching only the Security channel would have missed System Event ID 104 entirely.</p>
+
+<hr>
+
+<h2>16. Comparing the Three Sigma Rules</h2>
+
+<p>The three rules are complementary rather than interchangeable.</p>
+
+<table>
+<tr><th>Rule</th><th>Telemetry</th><th>Detection focus</th><th>Strength</th><th>Weakness</th></tr>
+<tr><td><strong>PowerShell Event Log Clearing</strong></td><td>PowerShell Event ID 4104</td><td>Script content</td><td>Can expose the exact PowerShell command</td><td>Requires Script Block Logging and can miss non-PowerShell execution</td></tr>
+<tr><td><strong>Event Log Clearing via Sysmon Process Creation</strong></td><td>Sysmon Event ID 1</td><td>Process + command line</td><td>Excellent execution context</td><td>Needs careful scoping to avoid WMI/legitimate administrative activity</td></tr>
+<tr><td><strong>File Deletion Detection - Event Log Clearing</strong></td><td>Windows Event IDs 104/1102</td><td>Result of clearing</td><td>Mechanism-independent confirmation</td><td>Less context about which process performed the action</td></tr>
+</table>
+
+<p>A useful way to think about them is:</p>
+
+<pre><code>                    Detection coverage
+                           |
+          +----------------+----------------+
+          |                |                |
+       PowerShell        Process          Result
+          |                |                |
+       Event 4104       Sysmon 1       Event 104/1102
+          |                |                |
+      "What script?"   "What ran?"    "Did clearing occur?"</code></pre>
+
+<p>This is why using several detection layers is preferable to relying on one signature.</p>
+
+<hr>
+
+<h2>17. Detection Engineering Lessons</h2>
+
+<h3>17.1 Detect behavior, not just filenames</h3>
+
+<p>A filename such as <code>wevtutil.exe</code> is not inherently malicious. The destructive intent is much clearer when the binary is combined with commands such as:</p>
+
+<pre><code>clear-log
+cl</code></pre>
+
+<p>The same principle applies to PowerShell: finding <code>powershell.exe</code> is much less valuable than finding a 4104 event containing <code>Clear-EventLog</code>.</p>
+
+<h3>17.2 The same ATT&CK behavior can have many execution paths</h3>
+
+<pre><code>wevtutil.exe
+wmic.exe -> NTEVENTLOG
+PowerShell -> Clear-EventLog
+PowerShell -> Remove-EventLog
+PowerShell -> .NET EventLog APIs
+Event Viewer / other mechanisms</code></pre>
+
+<p>A detection program should therefore map the behavior to <strong>multiple telemetry sources</strong> rather than searching for one command.</p>
+
+<h3>17.3 Telemetry configuration is part of detection quality</h3>
+
+<p>The PowerShell rule only works because Script Block Logging provides Event ID 4104. The process-creation rule depends on process telemetry such as Sysmon Event ID 1. The final rule depends on Windows generating and retaining Event IDs 104 and 1102.</p>
+
+<p>A perfect Sigma query cannot recover telemetry that was never collected.</p>
+
+<h3>17.4 Context improves precision</h3>
+
+<p>The lab's Sysmon exercise demonstrated this especially clearly. Searching for generic command fragments can match unrelated tools. Stronger rules should combine:</p>
+
+<pre><code>Binary identity
+      +
+Destructive sub-command
+      +
+Relevant arguments</code></pre>
+
+<h3>17.5 Result-based and action-based detections should coexist</h3>
+
+<p>A process-based rule may catch the attacker's command, while Event ID 104/1102 confirms the effect. Correlating both can give a much stronger incident signal than either one alone.</p>
+
+<pre><code>Sysmon 1: wevtutil clear-log Security
+                 |
+                 v
+Security 1102: audit log was cleared</code></pre>
+
+<p>That sequence gives the analyst both <strong>the actor's action</strong> and <strong>the resulting system state</strong>.</p>
+
+<hr>
+
+<h2>18. Final Detection Map</h2>
+
+<pre><code>                   T1070.001
+            Clear Windows Event Logs
+                       |
+      +----------------+----------------+
+      |                |                |
+   PowerShell         CLI              WMI
+      |                |                |
+  ScriptBlock       wevtutil           WMIC
+      |                |                |
+    4104            Sysmon 1          Sysmon 1
+      |                |                |
+      +----------------+----------------+
+                       |
+                Detection opportunity
+                       |
+            +----------+----------+
+            |                     |
+         Action                 Result
+            |                     |
+     "What did they do?"   "Did it happen?"
+            |                     |
+    4104 / Sysmon 1          104 / 1102
+            |                     |
+            +----------+----------+
+                       |
+                     Sigma
+                       |
+                    Chainsaw
+                       |
+             Historical validation</code></pre>
+
+<p>This map captures the main lesson of the exercise: <strong>event-log clearing is a behavior, not a single command</strong>. The same behavior can be reached through several execution mechanisms, and each mechanism produces different evidence.</p>
+
+<hr>
+
+<h2>19. Final Results</h2>
+
+<table>
+<tr><th>Lab question</th><th>Result</th></tr>
+<tr><td>Native Windows utility for event-log management/clearing</td><td><code>wevtutil</code></td></tr>
+<tr><td>WMI class involved in WMIC event-log manipulation</td><td><code>Win32_NTEventLogFile</code> (<code>NTEVENTLOG</code> WMIC alias)</td></tr>
+<tr><td>PowerShell logging required</td><td>Script Block Logging</td></tr>
+<tr><td>PowerShell event ID</td><td><strong>4104</strong></td></tr>
+<tr><td>PowerShell cmdlets</td><td><code>Clear-EventLog</code>, <code>Remove-EventLog</code></td></tr>
+<tr><td>Relevant .NET APIs</td><td><code>EventLogSession.ClearLog</code>, <code>EventLog.Clear</code></td></tr>
+<tr><td>Log-clearing event IDs</td><td><strong>104</strong>, <strong>1102</strong></td></tr>
+<tr><td>Earliest PowerShell detection</td><td><strong>2021-10-25 18:04:24</strong></td></tr>
+<tr><td>Latest observed process-creation match</td><td><strong>2025-04-28 09:19:35</strong></td></tr>
+<tr><td>Earliest event-log clearing event</td><td><strong>2019-01-20 07:00</strong></td></tr>
+</table>
+
+<hr>
+
+<h2>20. Conclusion</h2>
+
+<p>The SigmaPredator lab demonstrates an important detection-engineering principle: <strong>defense evasion techniques should be modeled from multiple angles</strong>.</p>
+
+<p><code>wevtutil</code>, WMIC/WMI, and PowerShell provide different ways to reach the same objective. PowerShell Script Block Logging can expose the exact script content, Sysmon process creation can reveal the executable and command line used to perform the action, and Event IDs 104 and 1102 can provide direct evidence that a Windows log was actually cleared.</p>
+
+<p>The Sigma rules developed during the lab translate those observations into portable detection logic, while Chainsaw provides a practical way to validate the rules against historical Windows event data. The validation process also exposed an important reality of detection engineering: a rule can technically match the intended behavior while still being broader than desired. The <code>wmic.exe</code> match in the Sysmon exercise is a good example of why <strong>binary identity, command context, and telemetry scope must be considered together</strong>.</p>
+
+<p>Ultimately, the strongest detection strategy is not a single rule. It is a layered model in which <strong>process activity, script content, and security-relevant outcomes reinforce one another</strong>.</p>
+
+<blockquote>With love, cuddest.</blockquote>
+
+<hr>
+
+<h2>References</h2>
+
+<ul>
+<li>Microsoft Learn — <code>wevtutil</code>: https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/wevtutil</li>
+<li>Microsoft Learn — Windows Event Log tools: https://learn.microsoft.com/en-us/windows/win32/wes/windows-event-log-tools</li>
+<li>Microsoft Learn — PowerShell logging / Script Block Logging: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_logging</li>
+<li>Microsoft Learn — <code>Clear-EventLog</code>: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/clear-eventlog</li>
+<li>Microsoft Learn — <code>Win32_NTEventLogFile</code>: https://learn.microsoft.com/en-us/windows/desktop/legacy/aa394225</li>
+<li>MITRE ATT&CK — Clear Windows Event Logs / Indicator Removal: https://attack.mitre.org/techniques/T1070/001/</li>
+</ul>
+
+  </div>
+  <footer class="wpost-foot">
+    <a class="btn-line" href="../index.html#writing">← Back to all writeups</a>
+  </footer>
+</article>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <span>Set in Geist &amp; JetBrains Mono</span>
+    <span><a class="ulink" href="../index.html#writing">Back to the site</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

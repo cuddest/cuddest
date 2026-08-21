@@ -202,6 +202,18 @@ const WRITEUPS = [
     url: "writeups/ghostconnect.html",
   },
   {
+    title: "SigmaPredator — Windows Event Log Clearing Detection",
+    tags: ["CyberDefenders", "Sigma", "Detection Engineering", "Windows", "Event Logs", "Chainsaw"],
+    event: "CyberDefenders",
+    category: "Lab writeups",
+    severity: "Critical",
+    date: "2026-08-19",
+    readTime: "25 min",
+    summary:
+      "Designing and validating Sigma rules for Windows Event Log clearing across PowerShell, native CLI, WMI/WMIC, and Windows event-log telemetry — with Chainsaw validation against historical logs.",
+    url: "writeups/sigmapredator.html",
+  },
+  {
     title: "ELK Home SOC — Containerized Security Monitoring with the Elastic Stack",
     tags: ["Elastic", "ELK", "SIEM", "Detection Engineering", "Docker", "SOC"],
     event: "Project",
